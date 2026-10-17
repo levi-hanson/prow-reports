@@ -9,7 +9,7 @@
 //   renderInset(deps, data, slot, inset, W, H)         -> canvas (for the spot pickers and the PDF)
 //   buildFullReport(deps, data, input, onStatus)       -> ArrayBuffer (PDF)
 
-import { DEFAULTS, resolveLayers, fetchFeatures, combinedExtent, renderBasemap, renderMapImage, rampColor, css, niceRound, fmtNum, layerKey } from "./renderer.js?v=20261017121544";
+import { DEFAULTS, resolveLayers, fetchFeatures, combinedExtent, renderBasemap, renderMapImage, rampColor, css, niceRound, fmtNum, layerKey } from "./renderer.js?v=20261017123523";
 
 // ---------------------------------------------------------------- design tokens (measured from the 2026 Bangor report)
 const PW = 612, PH = 792, ML = 54, CW = 504;            // letter portrait, left margin, content width (pt)
@@ -345,6 +345,125 @@ export const TEXT_EXAMPLES = {
     ["Bangor, ME", "Overview map: Sidewalk panels and curb ramps, color-coded by DCS, are shown as overlays. Additional overlays show access barriers, on-street accessible parking, and pedestrian signals."],
     ["Midland, TX", "Overview map: Sidewalk panels and curb ramps, color-coded by DCS, are shown as overlays. Additional overlays show transit boarding areas, access barriers, on-street parking locations, on-street accessible parking, and passenger loading zones."]],
 };
+
+// ---------------------------------------------------------------- Tables 3–10 straight from ArcGIS
+// A port of Ryan's ADA report table generator (ada_report_generator_local_2026-10-07). Its CSV inputs are
+// ArcGIS exports, so its column names are the layers' field aliases; here the fields are looked up the same way.
+// Tables 1–2 need slab lengths, which only ADA Manager stores, so they still come from the generator.
+const num0 = (v) => { if (v === null || v === undefined || String(v).trim() === "") return NaN; const n = Number(v); return Number.isFinite(n) ? n : NaN; };
+const fieldBy = (L, ...names) => {
+  const want = names.map((n) => n.toLowerCase());
+  const f = L.fields.find((x) => want.includes(String(x.alias || "").toLowerCase()) || want.includes(x.name.toLowerCase()));
+  return f ? f.name : null;
+};
+async function layerAttrs(deps, L, fields) {
+  const ids = (await deps.fetchJson(`${L.url}/query`, { where: "1=1", returnIdsOnly: "true" })).objectIds || [];
+  const out = [], f = [...new Set(fields.filter(Boolean))].join(",") || L.oidField;
+  for (let i = 0; i < ids.length; i += 1000) {
+    const r = await deps.fetchJson(`${L.url}/query`, { objectIds: ids.slice(i, i + 1000).join(","), outFields: f, returnGeometry: "false" });
+    if (r.error) throw new Error(`${L.title}: ${r.error.message}`);
+    for (const x of r.features || []) out.push(x.attributes);
+  }
+  return out;
+}
+// generator's score bins; 40 itself counts as 0-40 (the generator's `s < 40` / `40 < s` drops exactly 40)
+const scoreBin = (s) => (Number.isNaN(s) ? null : s <= 40 ? "0-40" : s <= 70 ? "41-70" : s < 100 ? "71-99" : s === 100 ? "100" : null);
+const fmt = (n) => Number(n).toLocaleString("en-US");
+
+export async function computeTables(deps, data, onStatus = () => {}) {
+  const out = {}, notes = [];
+  const G = data.groups;
+  // ---- crosswalks: Table 3 (lowest score per crosswalk) and Tables 4–7 (by signal type)
+  const XL = (G.crosswalks || [])[0];
+  if (XL) {
+    onStatus("Tables 3–7: reading crosswalks…");
+    const F = { path: fieldBy(XL, "Path ID", "path_id"), ticket: fieldBy(XL, "Ticket Key", "Ticket ID", "jira_id"), dcs: fieldBy(XL, "DCS Score"),
+      vo: fieldBy(XL, "Vertical Offset (IN.)"), rs: fieldBy(XL, "Running Slope (%)"), cs: fieldBy(XL, "Cross Slope (%)"), sig: fieldBy(XL, "Crosswalk Signal Type") };
+    const rows = (await layerAttrs(deps, XL, Object.values(F))).map((a) => ({
+      id: (F.path && a[F.path] != null && a[F.path] !== "" ? a[F.path] : F.ticket ? a[F.ticket] : null), dcs: num0(a[F.dcs]),
+      vo: num0(a[F.vo]), rs: Math.abs(num0(a[F.rs])), cs: Math.abs(num0(a[F.cs])), sig: F.sig ? a[F.sig] : null }));
+    // Table 3
+    const minBy = new Map();
+    for (const r of rows) if (r.id != null && !Number.isNaN(r.dcs)) minBy.set(r.id, Math.min(minBy.get(r.id) ?? Infinity, r.dcs));
+    const c3 = { "0-40": 0, "41-70": 0, "71-99": 0, "100": 0 };
+    for (const s of minBy.values()) { const b = scoreBin(s); if (b) c3[b]++; }
+    out[3] = { header: [...TABLE_TEMPLATES[3].header], rows: [["Crosswalk Score", "0-40", fmt(c3["0-40"]), "41-70", fmt(c3["41-70"]), "71-99", fmt(c3["71-99"]), "100", fmt(c3["100"])]] };
+    // Tables 4–7: each crosswalk counted once per row, in the worst bin it reaches
+    const sigTable = (type, running) => {
+      const df = rows.filter((r) => r.sig === type && r.id != null);
+      const ladder = (tests) => { const seen = new Set(); return tests.map((test) => { const ids = new Set(df.filter((r) => test(r) && !seen.has(r.id)).map((r) => r.id)); ids.forEach((i) => seen.add(i)); return ids.size; }); };
+      const vo = ladder([(r) => r.vo > 1, (r) => r.vo >= 0.5 && r.vo <= 1, (r) => r.vo >= 0.25 && r.vo < 0.5, (r) => r.vo < 0.25 || Number.isNaN(r.vo)]);
+      const rs = ladder([(r) => r.rs > 8.3, (r) => r.rs >= 5 && r.rs <= 8.3, (r) => r.rs < 5]);
+      const cs = running ? ladder([(r) => r.cs > 8.3, (r) => r.cs >= 5 && r.cs <= 8.3, (r) => r.cs < 5])
+        : ladder([(r) => r.cs > 5, (r) => r.cs >= 3 && r.cs <= 5, (r) => r.cs >= 2.08 && r.cs < 3, (r) => r.cs < 2.08 || Number.isNaN(r.cs)]);
+      return { header: [...TABLE_TEMPLATES[4].header], rows: [
+        ["Vertical Changes", '1" Plus', fmt(vo[0]), '0.5" to 1"', fmt(vo[1]), '0.25" - 0.5"', fmt(vo[2]), '< 0.25"', fmt(vo[3])],
+        ["Running Slope", "N/A", "N/A", "> 8.3%", fmt(rs[0]), "5% - 8.3%", fmt(rs[1]), "< 5%", fmt(rs[2])],
+        running ? ["Cross Slope", "N/A", "N/A", "> 8.3%", fmt(cs[0]), "5% - 8.3%", fmt(cs[1]), "< 5%", fmt(cs[2])]
+          : ["Cross Slope", "> 5.0%", fmt(cs[0]), "3.0% - 5.0%", fmt(cs[1]), "2.08% - 3%", fmt(cs[2]), "< 2.08%", fmt(cs[3])]] };
+    };
+    out[4] = sigTable("yield_or_stop_control_device", false); out[5] = sigTable("traffic_control_signal", true);
+    out[6] = sigTable("uncontrolled", true); out[7] = sigTable("midblock_or_roundabout", true);
+    const noType = new Set(rows.filter((r) => !r.sig && r.id != null).map((r) => r.id)).size;
+    if (noType) notes.push(`${fmt(noType)} crosswalks have no signal type, so they are not in Tables 4–7.`);
+  }
+  // ---- curb ramps: Table 8 (slopes / widths) and Table 9 (score)
+  const CL = (G.curbRamps || [])[0];
+  if (CL) {
+    onStatus("Tables 8–9: reading curb ramps…");
+    const pick = (...a) => a.map((x) => fieldBy(CL, x));
+    const cross = pick("Right Ramp Cross Slope (%)", "Left Ramp Cross Slope (%)", "Center Ramp Cross Slope (%)");
+    const run = pick("Right Ramp Running Slope (%)", "Left Ramp Running Slope (%)", "Center Ramp Running Slope (%)");
+    const width = pick("Right Ramp Width (IN.)", "Left Ramp Width (IN.)", "Center Ramp Width (IN.)");
+    const ts = pick("Turning Space Cross Slope (%)", "Turning Space Running Slope (%)");
+    const dcsF = fieldBy(CL, "DCS Score");
+    const attrs = await layerAttrs(deps, CL, [...cross, ...run, ...width, ...ts, dcsF]);
+    const max = (a, fs) => { const v = fs.filter(Boolean).map((f) => Math.abs(num0(a[f]))).filter((x) => !Number.isNaN(x)); return v.length ? Math.max(...v) : NaN; };
+    const crossBin = (v) => (Number.isNaN(v) ? null : v < 2.08 ? 3 : v < 3 ? 2 : v < 5 ? 1 : 0);
+    const runBin = (v) => (Number.isNaN(v) ? null : v < 8.3 ? 3 : v < 8.6 ? 2 : v < 9 ? 1 : 0);
+    const c = { x: [0, 0, 0, 0], r: [0, 0, 0, 0], w: [0, 0, 0, 0], t: [0, 0, 0, 0] }, sc = { "0-40": 0, "41-70": 0, "71-99": 0, "100": 0 };
+    let unscored = 0;
+    for (const a of attrs) {
+      let b = crossBin(max(a, cross)); if (b !== null) c.x[b]++;
+      b = runBin(max(a, run)); if (b !== null) c.r[b]++;
+      const ws = width.filter(Boolean).map((f) => num0(a[f])).filter((x) => !Number.isNaN(x)), w = ws.length ? Math.min(...ws) : NaN;
+      c.w[Number.isNaN(w) || w <= 32 ? 0 : w < 36 ? 1 : w < 48 ? 2 : 3]++;
+      b = crossBin(max(a, ts)); if (b !== null) c.t[b]++;
+      const s = scoreBin(num0(a[dcsF])); if (s) sc[s]++; else unscored++;
+    }
+    out[8] = { header: [...TABLE_TEMPLATES[8].header], rows: [
+      ["Cross Slope", "> 5.0%", fmt(c.x[0]), "3% - 5%", fmt(c.x[1]), "2.08% - 3%", fmt(c.x[2]), "< 2.08%", fmt(c.x[3])],
+      ["Running Slope", "> 9.0%", fmt(c.r[0]), "8.6% - 9%", fmt(c.r[1]), "8.3% - 8.6%", fmt(c.r[2]), "< 8.3%", fmt(c.r[3])],
+      ["Width", '< 32"', fmt(c.w[0]), '32"-36"', fmt(c.w[1]), '36" - 48"', fmt(c.w[2]), '> 48"', fmt(c.w[3])],
+      ["Turning Space Slope", "> 5.0%", fmt(c.t[0]), "3% - 5%", fmt(c.t[1]), "2.08% - 3%", fmt(c.t[2]), "< 2.08%", fmt(c.t[3])]] };
+    out[9] = { header: [...TABLE_TEMPLATES[9].header], rows: [["Dax Compliance Score (DCS)", "0-40", fmt(sc["0-40"]), "41-70", fmt(sc["41-70"]), "71-99", fmt(sc["71-99"]), "100", fmt(sc["100"])]] };
+    if (unscored) notes.push(`${fmt(unscored)} curb ramps have no DCS score, so they are not in Table 9.`);
+  }
+  // ---- transit stops: Table 10, from the nearest sidewalk slab's travel path width and cross slope
+  const TL = (G.transit || [])[0], SL = (G.sidewalks || [])[0];
+  if (TL && SL) {
+    onStatus("Table 10: matching transit stops to the nearest sidewalk…");
+    const wF = fieldBy(SL, "Travel Path Width (IN.)"), xF = fieldBy(SL, "Cross Slope (%)");
+    const wb = [0, 0, 0, 0], sb = [0, 0, 0, 0];
+    let unmatched = 0;
+    for (const f of TL.features) {
+      const g = f.geometry, pt = g.x !== undefined ? [g.x, g.y] : null; if (!pt) continue;
+      const r = await deps.fetchJson(`${SL.url}/query`, { geometry: JSON.stringify({ x: pt[0], y: pt[1], spatialReference: { wkid: 3857 } }), geometryType: "esriGeometryPoint", inSR: "3857",
+        distance: 30, units: "esriSRUnit_Meter", spatialRel: "esriSpatialRelIntersects", outFields: [wF, xF].filter(Boolean).join(","), returnGeometry: "true", outSR: "3857" });
+      let best = null, bd = Infinity;
+      for (const s of r.features || []) for (const ring of (s.geometry || {}).rings || []) for (const p of ring) { const d = (p[0] - pt[0]) ** 2 + (p[1] - pt[1]) ** 2; if (d < bd) { bd = d; best = s; } }
+      if (!best) unmatched++;
+      const w = best ? num0(best.attributes[wF]) : NaN, x = best ? Math.abs(num0(best.attributes[xF])) : NaN;
+      const wi = Number.isNaN(w) || w < 48 ? 0 : w <= 84 ? 1 : w >= 84.01 && w <= 96 ? 2 : w > 96.01 ? 3 : null; if (wi !== null) wb[wi]++;
+      const si = Number.isNaN(x) ? null : x < 2.08 ? 3 : x <= 3 ? 2 : x <= 5 ? 1 : 0; if (si !== null) sb[si]++;
+    }
+    out[10] = { header: [...TABLE_TEMPLATES[10].header], rows: [
+      ["Boarding/Alighting Depth", '< 48" or missing', fmt(wb[0]), '48" - 84"', fmt(wb[1]), '84.01" - 96"', fmt(wb[2]), '>96"', fmt(wb[3])],
+      ["Boarding/Alighting Slope", ">5.0%", fmt(sb[0]), "3.0%-5.0%", fmt(sb[1]), "2.08%-3.0%", fmt(sb[2]), "<2.08%", fmt(sb[3])]] };
+    if (unmatched) notes.push(`${fmt(unmatched)} transit stops have no sidewalk within 30 m; they count as "< 48 in or missing" in Table 10.`);
+  }
+  return { tables: out, notes };
+}
 
 // ---------------------------------------------------------------- PDF helpers
 function makeDoc(deps) {

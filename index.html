@@ -66,6 +66,9 @@ table.grid [contenteditable]:focus{outline:2px solid var(--accent);outline-offse
 @media (max-width:560px){.pickrow{flex-direction:column}.pickmap,.pickside{width:100%}}
 textarea{width:100%;font:inherit;font-size:14px;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--text);margin-top:4px;resize:vertical}
 #rtexts label{font-weight:600;font-size:13px}
+.calcbox{margin:12px 0;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
+.calcbox p{margin:0}
+.badge.src{color:var(--accent);border-color:var(--accent);font-weight:500}
 .badge{font-size:11px;font-weight:600;padding:1px 7px;border-radius:9px;background:var(--bg);color:var(--muted);border:1px solid var(--line);margin-left:6px}
 .badge.ok{color:var(--accent)}
 table.grid td.del{border:0;padding:0 0 0 4px;min-width:0}
@@ -217,6 +220,7 @@ table.ctable td:not(:first-child),table.ctable th:not(:first-child){text-align:c
         <label for="rfiles">3. Tables</label>
         <p class="muted">Drop in the ADA report generator's output: the <b>report_tables.zip</b>, its folder zipped up, or the Table CSVs. Or type the numbers into the blank templates below. Click any cell to edit it. A data reliability CSV is picked up if its file name contains “reliability” or “accuracy”.</p>
         <input type="file" id="rfiles" multiple accept=".zip,.csv">
+        <div id="rcalcbox" class="calcbox"><p class="small"><b>Tables 3–10 are filled in from ArcGIS</b> when the map loads (same rules as Ryan's report generator). Tables 1–2 need slab lengths, which only ADA Manager has, so they still come from the generator's output. <button id="rcalc" class="secondary small">Recalculate 3–10 from ArcGIS</button></p><div id="rcalcnotes" class="muted small"></div></div>
         <div id="rtables"></div>
       </section>
       <section class="card">
@@ -309,6 +313,6 @@ table.ctable td:not(:first-child),table.ctable th:not(:first-child){text-align:c
 </main>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script type="module" src="app.js?v=20261017121544"></script>
+<script type="module" src="app.js?v=20261017123523"></script>
 </body>
 </html>

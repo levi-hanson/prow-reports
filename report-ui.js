@@ -1,8 +1,8 @@
 // "Full report" tab: load a results map, drop in the report generator's tables, pick pages and
 // detail spots, and download the whole evaluation report as one PDF.
 import { loadReportData, buildFullReport, renderInset, renderPickerBase, defaultInset, insetExtent, parseCsv, tableNumber, cleanTable,
-  derivedNumbers, defaultTexts, TEXT_EXAMPLES, blankTable, tableHasData, featureAt, popupFields, defaultPopupFields, loadPopup, PAGES, INSETS } from "./report.js?v=20261017121544";
-import { DEFAULTS, layerKey, defaultOrder } from "./renderer.js?v=20261017121544";
+  derivedNumbers, defaultTexts, TEXT_EXAMPLES, computeTables, blankTable, tableHasData, featureAt, popupFields, defaultPopupFields, loadPopup, PAGES, INSETS } from "./report.js?v=20261017123523";
+import { DEFAULTS, layerKey, defaultOrder } from "./renderer.js?v=20261017123523";
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
@@ -24,7 +24,7 @@ function blankState() {
   const d = new Date(), today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   return { fields: { coverName: "", city: "", shortName: "", year: String(new Date().getFullYear()), date: today, miles: "", ramps: "" },
     tables: {}, reliability: blankTable("reliability"), include: PAGES.map((p) => p[0]), insets: {}, texts: null, textOverride: {}, popupOn: true, popup: null,
-    notNeeded: { fields: {}, tables: {} }, icons: null, order: null, savedAt: null };
+    notNeeded: { fields: {}, tables: {} }, icons: null, order: null, tableSource: {}, savedAt: null };
 }
 const save = () => { if (!mapId) return; S.savedAt = Date.now(); local.set(`report:${mapId}`, S); updateChecklist(); scheduleLive(); };
 
@@ -69,6 +69,7 @@ async function loadData() {
     const stored = local.get(`report:${id}`);
     S = Object.assign(blankState(), stored || {});
     S.notNeeded = Object.assign({ fields: {}, tables: {} }, S.notNeeded || {});
+    S.tableSource = S.tableSource || {};
     const md = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(S.fields.date || "");   // older saves used MM/DD/YYYY
     if (md) S.fields.date = `${md[3]}-${md[1].padStart(2, "0")}-${md[2].padStart(2, "0")}`;
     showRestored(stored && stored.savedAt);
@@ -82,6 +83,7 @@ async function loadData() {
     log(`Ready: ${data.layers.length} layers.`);
     $("rsteps").hidden = false;
     renderFields(); renderTables(); renderPages(); renderIcons(); renderTexts();
+    await calcTables(false);
     // preview opens by default and stays live unless it was switched off for this map
     S.live = S.live !== false; $("rlive").checked = S.live;
     if (S.live) build(); else $("rview").innerHTML = '<p class="pempty">Live preview is off — tick <b>Live</b> or click <b>Refresh preview</b>.</p>';
@@ -130,7 +132,7 @@ async function readTableFiles(files) {
   const take = async (name, text) => {
     if (isReliability(name)) { const t = parseCsv(text); if (t.header.length) { S.reliability = t; n++; } return; }
     const k = tableNumber(name); if (!k) return;
-    S.tables[k] = cleanTable(k, parseCsv(text)); n++;
+    S.tables[k] = cleanTable(k, parseCsv(text)); S.tableSource[k] = "upload"; n++;
   };
   for (const file of files) {
     if (/\.zip$/i.test(file.name)) {
@@ -158,10 +160,13 @@ function tableStatus(key) {
   if (n) return { s: "partial", label: `${n} empty cell${n === 1 ? "" : "s"}` };
   return { s: "ok", label: "Filled in" };
 }
-function badgeFor(key) { const st = tableStatus(key); return `<span class="badge st-${st.s}">${st.label}</span>`; }
+function badgeFor(key) {
+  const st = tableStatus(key), src = S.tableSource[key];
+  return `<span class="badge st-${st.s}">${st.label}</span>${src ? ` <span class="badge src">${src === "arcgis" ? "from ArcGIS" : src === "upload" ? "uploaded" : "edited"}</span>` : ""}`;
+}
 function gridHtml(key, title) {
   const t = tableOf(key), nn = !!S.notNeeded.tables[key];
-  return `<details class="tbl ${nn ? "nn" : ""}" id="tbl-${key}" data-k="${key}" ${openGrids.has(String(key)) ? "open" : ""}><summary>${esc(title)} ${badgeFor(key)}
+  return `<details class="tbl ${nn ? "nn" : ""}" id="tbl-${key}" data-k="${key}" ${openGrids.has(String(key)) ? "open" : ""}><summary>${esc(title)} <span class="bwrap">${badgeFor(key)}</span>
       <label class="chk nn inline" onclick="event.stopPropagation()"><input type="checkbox" data-tnn="${key}" ${nn ? "checked" : ""}> Not needed</label></summary>
     <div class="scroll"><table class="grid" data-t="${key}">
     <tr>${t.header.map((h, c) => `<th contenteditable data-r="-1" data-c="${c}">${esc(h)}</th>`).join("")}<th></th></tr>
@@ -180,7 +185,8 @@ function renderTables() {
     tbl.querySelectorAll("[contenteditable]").forEach((cell) => cell.oninput = () => {
       const r = +cell.dataset.r, c = +cell.dataset.c;
       if (r < 0) t.header[c] = cell.textContent; else t.rows[r][c] = cell.textContent;
-      tbl.closest("details").querySelector(".badge").outerHTML = badgeFor(key);
+      if (key !== "reliability" && S.tableSource[key] !== "upload") S.tableSource[key] = "edited";
+      tbl.closest("details").querySelector(".bwrap").innerHTML = badgeFor(key);
       save(); renderPages(); refreshTexts(); fieldHints();
     });
     const box = tbl.closest("details");
@@ -189,11 +195,28 @@ function renderTables() {
     box.querySelector("[data-add]").onclick = () => { t.rows.push(t.header.map(() => "")); save(); renderTables(); };
     box.querySelector("[data-blank]").onclick = () => {
       if (!confirm("Replace this table with the blank template?")) return;
-      if (key === "reliability") S.reliability = blankTable("reliability"); else S.tables[key] = blankTable(+key);
+      if (key === "reliability") S.reliability = blankTable("reliability"); else { S.tables[key] = blankTable(+key); delete S.tableSource[key]; }
       save(); renderTables();
     };
   });
   renderPages(); refreshTexts(); fieldHints();
+}
+
+// Tables 3–10 from ArcGIS. On load (force=false) only blank tables or ones that came from ArcGIS before are
+// (re)filled, so uploads and hand edits are kept; the button (force=true) replaces 3–10 after confirming.
+async function calcTables(force) {
+  const box = $("rcalcnotes"); box.textContent = "Calculating Tables 3–10 from ArcGIS…"; $("rcalc").disabled = true;
+  try {
+    const { tables, notes } = await computeTables({ fetchJson: ctx.fetchJson }, data, (s) => { box.textContent = s; });
+    const kept = [];
+    for (const [n, t] of Object.entries(tables)) {
+      const mine = !tableHasData(S.tables[n]) || S.tableSource[n] === "arcgis";
+      if (force || mine) { S.tables[n] = t; S.tableSource[n] = "arcgis"; } else kept.push(n);
+    }
+    box.innerHTML = [...notes.map(esc), kept.length ? `Kept your ${kept.length === 1 ? "table" : "tables"} ${kept.join(", ")} (uploaded or edited) — use the button to replace with ArcGIS.` : ""].filter(Boolean).map((s) => `<div>${s}</div>`).join("") || "Tables 3–10 are up to date with ArcGIS.";
+    save(); renderTables();
+  } catch (e) { box.textContent = `Couldn't calculate from ArcGIS: ${e.message}`; }
+  $("rcalc").disabled = false;
 }
 
 // ---------------------------------------------------------------- step 4: pages
@@ -580,6 +603,7 @@ export function initReportTab(c) {
     log(`Read ${n} table${n === 1 ? "" : "s"}.`); save(); renderTables();
     $("rfiles").value = "";
   };
+  $("rcalc").onclick = () => { if (confirm("Replace Tables 3–10 with values calculated from ArcGIS? Uploaded or edited versions of those tables will be overwritten.")) calcTables(true); };
   $("rgo").onclick = () => { showSide(true); build(); };
   $("rlive").onchange = (e) => { S.live = e.target.checked; save(); if (S.live) build(); };
   $("rdl").onclick = (e) => { if ($("rdl").classList.contains("disabled") || !lastUrl) { e.preventDefault(); updateChecklist(); $("rcheck").scrollIntoView({ behavior: "smooth", block: "center" }); } };
