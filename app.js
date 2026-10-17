@@ -1,9 +1,13 @@
-import { CONFIG } from "./config.js?v=20261017130757";
-import { buildReport, resolveLayers, layerKey, defaultOrder, ALL_KEY, DEFAULTS } from "./renderer.js?v=20261017130757";
-import { initReportTab, setReportMaps } from "./report-ui.js?v=20261017130757";
-import { initCompletenessTab, setCompletenessMaps } from "./completeness.js?v=20261017130757";
+import { CONFIG } from "./config.js?v=20261017132448";
+import { buildReport, resolveLayers, layerKey, defaultOrder, ALL_KEY, DEFAULTS } from "./renderer.js?v=20261017132448";
+import { initReportTab, setReportMaps } from "./report-ui.js?v=20261017132448";
+import { initCompletenessTab, setCompletenessMaps } from "./completeness.js?v=20261017132448";
 
 const $ = (id) => document.getElementById(id);
+// One map at a time across the tabs: whichever tab loads a map announces it ("prow:map-loaded") and the other
+// tabs load the same map in the background, sharing the downloaded layers.
+window.__prowShared = window.__prowShared || { features: new Map() };
+export const announceMap = (id, source) => window.dispatchEvent(new CustomEvent("prow:map-loaded", { detail: { id, source } }));
 const SHARING = `${CONFIG.portal}/sharing/rest`;
 const store = {
   get: (k) => { try { return JSON.parse(sessionStorage.getItem(k)); } catch { return null; } },
@@ -179,7 +183,7 @@ async function buildMaps() {
   const id = $("map").value; if (!id) return;
   if (mbuilding) { mpending = true; return; }
   mbuilding = true; mpending = false; showMapPane(true); mstatus("Updating…");
-  if (!mcache || mcache.id !== id) mcache = { id, features: new Map(), base: new Map() };
+  if (!mcache || mcache.id !== id) mcache = { id, features: window.__prowShared.features, base: new Map() };
   try {
     const deps = { fetchJson, createCanvas, loadImage, jsPDF: window.jspdf.jsPDF, fonts: await fonts(),
       toJpeg: (cv, q) => blobBytes(cv, "image/jpeg", q), toPng: (cv) => blobBytes(cv, "image/png") };
@@ -252,11 +256,20 @@ $("mdl").onclick = (e) => { if ($("mdl").classList.contains("disabled")) e.preve
 for (const id of ["page", "basemap"]) $(id).onchange = scheduleMaps;
 $("date").oninput = scheduleMaps;
 // steps 2–4 appear once a map is loaded (same pattern as the other tabs); picking another map hides them again
+let mloaded = null, mloading = null;
 $("mload").onclick = async () => {
+  const id = $("map").value; mloading = id;
   $("msteps").hidden = false; showMapPane(true); mres = null; $("mpick").hidden = true; $("mdl").classList.add("disabled");
   $("mview").innerHTML = '<p class="pempty busy">Loading map data…</p>'; loadPdfJs().catch(() => {});
   $("mload").classList.add("busy"); await loadIcons(); $("mload").classList.remove("busy");
+  mloaded = id; mloading = null; announceMap(id, "maps");
   if ($("mlive").checked) buildMaps(); else $("mview").innerHTML = '<p class="pempty">Live preview is off — tick <b>Live</b> or click <b>Refresh preview</b>.</p>';
 };
-$("map").onchange = () => { $("msteps").hidden = true; };
+$("map").onchange = () => { $("msteps").hidden = true; mloaded = null; };
+window.addEventListener("prow:map-loaded", (e) => {
+  const { id, source } = e.detail;
+  if (source === "maps" || mloaded === id || mloading === id || !$("app") || $("app").hidden) return;
+  if (![...$("map").options].some((o) => o.value === id)) return;
+  $("map").value = id; $("mload").click();
+});
 init();

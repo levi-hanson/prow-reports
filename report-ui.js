@@ -1,8 +1,8 @@
 // "Full report" tab: load a results map, drop in the report generator's tables, pick pages and
 // detail spots, and download the whole evaluation report as one PDF.
 import { loadReportData, buildFullReport, renderInset, renderPickerBase, defaultInset, insetExtent, parseCsv, tableNumber, cleanTable,
-  derivedNumbers, defaultTexts, TEXT_EXAMPLES, computeTables, blankTable, tableHasData, featureAt, popupFields, defaultPopupFields, loadPopup, PAGES, INSETS } from "./report.js?v=20261017130757";
-import { DEFAULTS, layerKey, defaultOrder } from "./renderer.js?v=20261017130757";
+  derivedNumbers, defaultTexts, TEXT_EXAMPLES, computeTables, blankTable, tableHasData, featureAt, popupFields, defaultPopupFields, loadPopup, PAGES, INSETS } from "./report.js?v=20261017132448";
+import { DEFAULTS, layerKey, defaultOrder } from "./renderer.js?v=20261017132448";
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
@@ -47,7 +47,7 @@ async function assets() {
   assetCache = { cover, cone, logo, mark, iconSidewalks: a, iconCrosswalks: b, iconCurbramps: c, iconTransit: d };
   return assetCache;
 }
-const deps = () => ({ fetchJson: ctx.fetchJson, fetchImage: ctx.fetchImage, createCanvas: ctx.createCanvas, loadImage: ctx.loadImage, jsPDF: window.jspdf.jsPDF,
+const deps = () => ({ featureCache: (window.__prowShared || {}).features, fetchJson: ctx.fetchJson, fetchImage: ctx.fetchImage, createCanvas: ctx.createCanvas, loadImage: ctx.loadImage, jsPDF: window.jspdf.jsPDF,
   toJpeg: (cv, q) => ctx.blobBytes(cv, "image/jpeg", q), toPng: (cv) => ctx.blobBytes(cv, "image/png") });
 
 function log(msg, progress) {
@@ -58,8 +58,10 @@ function log(msg, progress) {
 }
 
 // ---------------------------------------------------------------- step 1: load
+let rloading = null;
 async function loadData() {
   const id = $("rmap").value; if (!id) return;
+  rloading = id;
   $("rload").disabled = true; $("rload").classList.add("busy"); $("rlog").innerHTML = ""; $("rsteps").hidden = true;
   showSide(true);
   $("rview").innerHTML = '<p class="pempty busy">Loading map data…</p>'; pstatus("Preview"); loadPdfJs().catch(() => {});
@@ -91,6 +93,8 @@ async function loadData() {
     await renderPickers();
   } catch (e) { log(`Error: ${e.message}`); $("rview").innerHTML = `<p class="pempty">Couldn't load the map: ${esc(e.message)}</p>`; }
   $("rload").disabled = false; $("rload").classList.remove("busy");
+  rloading = null;
+  if (mapId === id) window.dispatchEvent(new CustomEvent("prow:map-loaded", { detail: { id, source: "report" } }));
 }
 
 // ---------------------------------------------------------------- step 2: details
@@ -600,6 +604,13 @@ async function showPdf(bytes) {
 // ---------------------------------------------------------------- init
 export function initReportTab(c) {
   ctx = c;
+  // another tab loaded a map: load the same one here in the background
+  window.addEventListener("prow:map-loaded", (e) => {
+    const { id, source } = e.detail;
+    if (source === "report" || mapId === id || rloading === id) return;
+    if (![...$("rmap").options].some((o) => o.value === id)) return;
+    $("rmap").value = id; loadData();
+  });
   $("rload").onclick = loadData;
   $("rfind").onclick = () => ctx.searchMaps($("rsearch").value.trim()).catch((e) => log(`Error: ${e.message}`));
   $("rsearch").onkeydown = (e) => { if (e.key === "Enter") $("rfind").click(); };

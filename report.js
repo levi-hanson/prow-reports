@@ -9,7 +9,7 @@
 //   renderInset(deps, data, slot, inset, W, H)         -> canvas (for the spot pickers and the PDF)
 //   buildFullReport(deps, data, input, onStatus)       -> ArrayBuffer (PDF)
 
-import { DEFAULTS, resolveLayers, fetchFeatures, combinedExtent, renderBasemap, renderMapImage, rampColor, css, niceRound, fmtNum, layerKey } from "./renderer.js?v=20261017130757";
+import { DEFAULTS, resolveLayers, fetchFeatures, combinedExtent, renderBasemap, renderMapImage, rampColor, css, niceRound, fmtNum, layerKey } from "./renderer.js?v=20261017132448";
 
 // ---------------------------------------------------------------- design tokens (measured from the 2026 Bangor report)
 const PW = 612, PH = 792, ML = 54, CW = 504;            // letter portrait, left margin, content width (pt)
@@ -55,9 +55,12 @@ export const INSETS = {
 export async function loadReportData(deps, sharing, webmapId, onStatus = () => {}) {
   onStatus("Reading the web map…");
   const { title, layers } = await resolveLayers(deps, sharing, webmapId);
+  const cache = deps.featureCache || null;   // shared with the other tabs (url -> features)
   for (const L of layers) {
+    if (cache && cache.has(L.url)) { L.features = cache.get(L.url); onStatus(`${L.title}: ${L.features.length.toLocaleString()} features (already downloaded)`); continue; }
     const { features } = await fetchFeatures(deps, L, (d, n) => onStatus(`Downloading ${L.title}: ${d.toLocaleString()} / ${n.toLocaleString()}`, true));
     L.features = features;
+    if (cache) cache.set(L.url, features);
     onStatus(`${L.title}: ${features.length.toLocaleString()} features`);
   }
   const drawable = layers.filter((L) => L.features.length);

@@ -5,7 +5,7 @@
 //
 // Core functions are environment-agnostic (deps: fetchJson, jsPDF, reportFonts, assets) for Node testing.
 
-import { resolveLayers } from "./renderer.js?v=20261017130757";
+import { resolveLayers } from "./renderer.js?v=20261017132448";
 
 export const CHECKS = [
   { key: "dcs", label: "DCS scores reported", field: /^DCS_SCORE$/i },
@@ -300,20 +300,30 @@ function renderNotes() {
   });
   $("cthresh2").onchange = () => { $("cthresh").value = $("cthresh2").value; store.set("cthresh", threshold()); renderNotes(); schedulePreview(); };
 }
+let crunning = null;
 async function run() {
   const id = $("cmap").value; if (!id) return;
+  crunning = id; const prevId = lastId;
   $("crun").disabled = true; $("crun").classList.add("busy"); $("clog").innerHTML = ""; $("cresults").innerHTML = ""; $("cactions").hidden = true; $("csteps").hidden = true;
   $("cdl").classList.add("disabled"); $("cview").innerHTML = '<p class="pempty busy">Checking the map…</p>'; $("cpstatus").textContent = "Preview"; showCertPane(true); loadPdfJs().catch(() => {});
   try {
     last = await checkMap({ fetchJson: ctx.fetchJson }, ctx.SHARING, id, log);
     lastId = id; notes = store.get(`cnotes:${id}`) || {};
-    if (!$("cclient").value.trim()) $("cclient").value = last.title.replace(/\s*Results Map\s*$/i, "").trim();
+    if (!$("cclient").value.trim() || prevId !== id) $("cclient").value = last.title.replace(/\s*Results Map\s*$/i, "").trim();
     log("Done."); $("csteps").hidden = false; renderResults(); if ($("clive").checked) previewCert(); else $("cview").innerHTML = '<p class="pempty">Live preview is off — tick <b>Live</b> to show the certificate.</p>';
   } catch (e) { log(`Error: ${e.message}`); }
   $("crun").disabled = false; $("crun").classList.remove("busy");
+  crunning = null;
+  if (lastId === id) window.dispatchEvent(new CustomEvent("prow:map-loaded", { detail: { id, source: "complete" } }));
 }
 export function initCompletenessTab(c) {
   ctx = c;
+  window.addEventListener("prow:map-loaded", (e) => {
+    const { id, source } = e.detail;
+    if (source === "complete" || lastId === id || crunning === id) return;
+    if (![...$("cmap").options].some((o) => o.value === id)) return;
+    $("cmap").value = id; run();
+  });
   $("cfind").onclick = () => ctx.searchMaps($("csearch").value.trim()).catch((e) => log(`Error: ${e.message}`));
   $("csearch").onkeydown = (e) => { if (e.key === "Enter") $("cfind").click(); };
   $("crun").onclick = run;
