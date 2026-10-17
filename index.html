@@ -114,6 +114,14 @@ details.ex p{margin:6px 0;color:var(--muted)}
 p.small,details.small{font-size:12px}
 #rlog{margin-top:16px;max-height:200px;overflow:auto;font:12px/1.5 ui-monospace,Menlo,monospace;color:var(--muted);background:var(--bg);border-radius:6px;padding:8px 10px}
 #rlog:empty{display:none}
+#clog{margin-top:12px;max-height:180px;overflow:auto;font:12px/1.5 ui-monospace,Menlo,monospace;color:var(--muted);background:var(--bg);border-radius:6px;padding:8px 10px}
+#clog:empty{display:none}
+.cbig{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:6px 0 14px}
+.cbig div{border:1px solid var(--line);border-radius:8px;padding:12px;text-align:center;display:flex;flex-direction:column;gap:2px}
+.cbig b{font-size:26px;color:var(--accent)}
+.cbig span{font-size:13px}
+@media (max-width:560px){.cbig{grid-template-columns:1fr}}
+table.ctable td:not(:first-child),table.ctable th:not(:first-child){text-align:center;white-space:nowrap}
 </style>
 </head>
 <body>
@@ -129,6 +137,7 @@ p.small,details.small{font-size:12px}
   <nav class="tabs" id="tabs" hidden role="tablist">
     <button role="tab" data-tab="tab-report" aria-selected="true">Full report</button>
     <button role="tab" data-tab="tab-maps" aria-selected="false">Map PDFs</button>
+    <button role="tab" data-tab="tab-complete" aria-selected="false">Completeness</button>
   </nav>
   <div id="tab-maps" class="tabpane">
   <section id="app" class="card" hidden>
@@ -221,6 +230,28 @@ p.small,details.small{font-size:12px}
    </div>
   </div>
 
+  <div id="tab-complete" class="tabpane" hidden>
+    <section class="card">
+      <p class="muted">Checks every feature in a results map for a DCS score, a PROWAG compliance answer and an attached image, and issues a Certificate of Completeness.</p>
+      <label for="csearch">1. Find the results map</label>
+      <div class="row"><input id="csearch" placeholder="e.g. Bangor Results Map"><button id="cfind" class="secondary narrow">Search</button></div>
+      <div class="row" style="margin-top:8px"><select id="cmap" aria-label="Results map"></select><button id="crun" class="narrow" disabled>Run checks</button></div>
+      <p class="muted">About a minute for a large city (the image check looks at every feature).</p>
+      <div id="clog"></div>
+    </section>
+    <section class="card">
+      <label>2. Results</label>
+      <div id="cresults"><p class="muted">Run the checks to see how complete each layer is.</p></div>
+      <div id="cactions" hidden>
+        <div class="fields">
+          <div class="fld"><label for="cclient">Name on the certificate</label><input id="cclient" placeholder="e.g. Bangor, ME"></div>
+          <div class="fld"><label for="cissuer">Issued by</label><input id="cissuer" value="Daxbot"></div>
+        </div>
+        <p style="margin-top:14px"><button id="ccert">Download certificate (PDF)</button> <button id="ccsv" class="secondary">Download missing items (CSV)</button></p>
+      </div>
+    </section>
+  </div>
+
   <section class="card">
     <b>Help</b>
     <ol class="muted">
@@ -234,6 +265,6 @@ p.small,details.small{font-size:12px}
 </main>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script type="module" src="app.js?v=20261017110128"></script>
+<script type="module" src="app.js?v=20261017111153"></script>
 </body>
 </html>
