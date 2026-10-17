@@ -1,6 +1,6 @@
-import { CONFIG } from "./config.js";
-import { buildReport, resolveLayers, layerKey, defaultOrder, ALL_KEY, DEFAULTS } from "./renderer.js";
-import { initReportTab, setReportMaps } from "./report-ui.js";
+import { CONFIG } from "./config.js?v=20261016185019";
+import { buildReport, resolveLayers, layerKey, defaultOrder, ALL_KEY, DEFAULTS } from "./renderer.js?v=20261016185019";
+import { initReportTab, setReportMaps } from "./report-ui.js?v=20261016185019";
 
 const $ = (id) => document.getElementById(id);
 const SHARING = `${CONFIG.portal}/sharing/rest`;
@@ -191,7 +191,8 @@ async function init() {
     document.querySelectorAll("#tabs button").forEach((x) => { x.setAttribute("aria-selected", String(x === b)); $(x.dataset.tab).hidden = x !== b; });
     document.body.classList.toggle("wide", b.dataset.tab === "tab-report");
   });
-  initReportTab({ fetchJson, fetchImage, SHARING, createCanvas, loadImage, blobBytes });
+  // the Full report tab must never stop the Map PDFs tab from working
+  try { initReportTab({ fetchJson, fetchImage, SHARING, createCanvas, loadImage, blobBytes }); } catch (e) { console.error("Full report tab:", e); }
   $("search").value = CONFIG.defaultSearch;
   $("page").value = DEFAULTS.page; $("basemap").value = DEFAULTS.basemap;
   await searchMaps();
