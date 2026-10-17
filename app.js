@@ -1,7 +1,7 @@
-import { CONFIG } from "./config.js?v=20261017120934";
-import { buildReport, resolveLayers, layerKey, defaultOrder, ALL_KEY, DEFAULTS } from "./renderer.js?v=20261017120934";
-import { initReportTab, setReportMaps } from "./report-ui.js?v=20261017120934";
-import { initCompletenessTab, setCompletenessMaps } from "./completeness.js?v=20261017120934";
+import { CONFIG } from "./config.js?v=20261017121221";
+import { buildReport, resolveLayers, layerKey, defaultOrder, ALL_KEY, DEFAULTS } from "./renderer.js?v=20261017121221";
+import { initReportTab, setReportMaps } from "./report-ui.js?v=20261017121221";
+import { initCompletenessTab, setCompletenessMaps } from "./completeness.js?v=20261017121221";
 
 const $ = (id) => document.getElementById(id);
 const SHARING = `${CONFIG.portal}/sharing/rest`;
@@ -73,10 +73,9 @@ async function searchMaps(q = $("search").value.trim()) {
   const r = await fetchJson(`${SHARING}/search`, { q: `${q ? `title:"${q.replace(/"/g, "")}" ` : ""}type:"Web Map" orgid:${me.id}`, num: 100, sortField: "title", sortOrder: "asc" });
   const items = (r.results || []).filter((i) => i.type === "Web Map");
   sel.innerHTML = items.length ? items.map((i) => `<option value="${i.id}">${i.title.replace(/</g, "&lt;")}</option>`).join("") : "<option value=''>No maps found</option>";
-  $("go").disabled = !items.length;
+  $("mload").disabled = !items.length; $("msteps").hidden = true;
   setReportMaps(items);
   setCompletenessMaps(items);
-  loadIcons();
 }
 
 // ---------------------------------------------------------------- icon sizes (point layers only)
@@ -186,7 +185,7 @@ async function init() {
   if (!CONFIG.clientId) { $("signedout").innerHTML = "<p class='warn'>This tool isn't connected to ArcGIS yet (missing app Client ID in config.js).</p>"; return; }
   try { await finishSignIn(); } catch (e) { $("signedout").insertAdjacentHTML("beforeend", `<p class="warn">${e.message}</p>`); }
   const a = auth();
-  $("signedout").hidden = !!a; $("app").hidden = !a;
+  $("signedout").hidden = !!a; $("app").hidden = !a; $("whoami").hidden = !a;
   if (!a) return;
   $("who").textContent = a.user;
   $("tabs").hidden = false;
@@ -208,5 +207,7 @@ $("signout").onclick = () => { store.del("auth"); location.reload(); };
 $("find").onclick = () => searchMaps().catch((e) => log(`Error: ${e.message}`));
 $("search").onkeydown = (e) => { if (e.key === "Enter") $("find").click(); };
 $("go").onclick = generate;
-$("map").onchange = loadIcons;
+// steps 2–4 appear once a map is loaded (same pattern as the other tabs); picking another map hides them again
+$("mload").onclick = async () => { $("msteps").hidden = false; await loadIcons(); };
+$("map").onchange = () => { $("msteps").hidden = true; };
 init();

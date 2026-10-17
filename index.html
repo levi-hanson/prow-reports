@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PROW Map PDFs</title>
+<title>PROW Reports</title>
 <style>
 :root{--bg:#f6f7f8;--panel:#fff;--text:#1c2226;--muted:#5d6b73;--line:#d9e0e4;--accent:#0b6e8a;--warn:#b54708}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#111619;--panel:#182126;--text:#e6eef1;--muted:#93a4ac;--line:#2a363d;--accent:#5fb7cf;--warn:#f0a35e}}
@@ -35,6 +35,8 @@ table.icons td.mv button{padding:2px 8px;margin-right:2px;font-size:12px}
 .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
 @media (max-width:560px){.grid{grid-template-columns:1fr}}
 ol{padding-left:20px;margin:8px 0}
+.whoami{align-items:center;margin-top:12px}
+.whoami p{margin:0}
 .tabs{display:flex;gap:4px;margin-top:20px;border-bottom:1px solid var(--line)}
 .tabs button{background:transparent;color:var(--muted);border-radius:6px 6px 0 0;border:1px solid transparent;border-bottom:0;margin-bottom:-1px}
 .tabs button[aria-selected="true"]{background:var(--panel);color:var(--text);border-color:var(--line)}
@@ -135,14 +137,15 @@ table.ctable td:not(:first-child),table.ctable th:not(:first-child){text-align:c
 </head>
 <body>
 <main>
-  <h1>PROW Map PDFs</h1>
-  <p class="muted">Makes the print-ready map PDFs for a results map: one map of everything plus one map per layer, ready for InDesign.</p>
+  <h1>PROW Reports</h1>
+  <p class="muted">Deliverables for a results map: the full evaluation report, a certificate of completeness, and print-ready map PDFs.</p>
 
   <section id="signedout" class="card">
     <p>Sign in with your ArcGIS account to get started.</p>
     <button id="signin">Sign in with ArcGIS</button>
   </section>
 
+  <div id="whoami" class="row whoami" hidden><p class="muted">Signed in as <b id="who"></b></p><button id="signout" class="secondary narrow">Sign out</button></div>
   <nav class="tabs" id="tabs" hidden role="tablist">
     <button role="tab" data-tab="tab-report" aria-selected="true">Full report</button>
     <button role="tab" data-tab="tab-complete" aria-selected="false">Completeness</button>
@@ -150,13 +153,13 @@ table.ctable td:not(:first-child),table.ctable th:not(:first-child){text-align:c
   </nav>
   <div id="tab-maps" class="tabpane">
   <section id="app" class="card" hidden>
-    <div class="row" style="align-items:center"><p class="muted">Signed in as <b id="who"></b></p><button id="signout" class="secondary narrow">Sign out</button></div>
-
-    <label for="search">1. Find the map</label>
+    <p class="muted">Makes the print-ready map PDFs for a results map: one map of everything plus one map per layer, ready for InDesign.</p>
+    <label for="search">1. Find the results map</label>
     <div class="row"><input id="search" placeholder="e.g. Hilton Head Results Map"><button id="find" class="secondary narrow">Search</button></div>
-    <label for="map">Map</label>
-    <select id="map"></select>
-
+    <div class="row" style="margin-top:8px"><select id="map" aria-label="Results map"></select><button id="mload" class="narrow" disabled>Load map</button></div>
+  </section>
+  <div id="msteps" hidden>
+  <section class="card">
     <label>2. Options</label>
     <div class="grid">
       <select id="page" aria-label="Page size"><option value="letter">Letter (11×8.5)</option><option value="tabloid">Tabloid (17×11)</option><option value="a3">A3</option></select>
@@ -164,16 +167,19 @@ table.ctable td:not(:first-child),table.ctable th:not(:first-child){text-align:c
       <input id="date" placeholder="Date (blank = today)" aria-label="Date">
     </div>
 
+  </section>
+  <section class="card">
     <label>3. Layers: order and icon sizes</label>
     <div id="icons"><p class="muted">Pick a map to see its layers.</p></div>
-
+  </section>
+  <section class="card">
     <label>4. Make the PDFs</label>
     <button id="go" disabled>Generate PDFs</button>
     <p class="muted">Takes a few minutes for a large city — keep this tab open. A zip downloads when it's done.</p>
     <div id="log"></div>
     <div id="result"></div>
   </section>
-
+  </div>
   </div>
 
   <div id="tab-report" class="tabpane" hidden>
@@ -250,6 +256,7 @@ table.ctable td:not(:first-child),table.ctable th:not(:first-child){text-align:c
       <p class="muted">About a minute for a large city (the image check looks at every feature).</p>
       <div id="clog"></div>
     </section>
+    <div id="csteps" hidden>
     <section class="card">
       <label>2. Results</label>
       <div id="cresults"><p class="muted">Run the checks to see how complete each layer is.</p></div>
@@ -262,6 +269,7 @@ table.ctable td:not(:first-child),table.ctable th:not(:first-child){text-align:c
         <p style="margin-top:14px"><button id="ccert">Download certificate (PDF)</button> <button id="ccsv" class="secondary">Download missing items (CSV)</button></p>
       </div>
     </section>
+    </div>
    </div>
    <aside id="cpreview" class="rright card" aria-label="Certificate preview">
      <div class="pbar">
@@ -288,6 +296,6 @@ table.ctable td:not(:first-child),table.ctable th:not(:first-child){text-align:c
 </main>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script type="module" src="app.js?v=20261017120934"></script>
+<script type="module" src="app.js?v=20261017121221"></script>
 </body>
 </html>

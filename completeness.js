@@ -5,7 +5,7 @@
 //
 // Core functions are environment-agnostic (deps: fetchJson, jsPDF, reportFonts, assets) for Node testing.
 
-import { resolveLayers } from "./renderer.js?v=20261017120934";
+import { resolveLayers } from "./renderer.js?v=20261017121221";
 
 export const CHECKS = [
   { key: "dcs", label: "DCS scores reported", field: /^DCS_SCORE$/i },
@@ -302,13 +302,13 @@ function renderNotes() {
 }
 async function run() {
   const id = $("cmap").value; if (!id) return;
-  $("crun").disabled = true; $("clog").innerHTML = ""; $("cresults").innerHTML = ""; $("cactions").hidden = true;
+  $("crun").disabled = true; $("clog").innerHTML = ""; $("cresults").innerHTML = ""; $("cactions").hidden = true; $("csteps").hidden = true;
   $("cdl").classList.add("disabled"); $("cview").innerHTML = '<p class="pempty">Checking the map…</p>'; $("cpstatus").textContent = "Preview"; showCertPane(true); loadPdfJs().catch(() => {});
   try {
     last = await checkMap({ fetchJson: ctx.fetchJson }, ctx.SHARING, id, log);
     lastId = id; notes = store.get(`cnotes:${id}`) || {};
     if (!$("cclient").value.trim()) $("cclient").value = last.title.replace(/\s*Results Map\s*$/i, "").trim();
-    log("Done."); renderResults(); if ($("clive").checked) previewCert(); else $("cview").innerHTML = '<p class="pempty">Live preview is off — tick <b>Live</b> to show the certificate.</p>';
+    log("Done."); $("csteps").hidden = false; renderResults(); if ($("clive").checked) previewCert(); else $("cview").innerHTML = '<p class="pempty">Live preview is off — tick <b>Live</b> to show the certificate.</p>';
   } catch (e) { log(`Error: ${e.message}`); }
   $("crun").disabled = false;
 }
@@ -336,6 +336,7 @@ export function initCompletenessTab(c) {
   };
 }
 export function setCompletenessMaps(items) {
+  $("csteps").hidden = true;
   $("cmap").innerHTML = items.length ? items.map((i) => `<option value="${i.id}">${esc(i.title)}</option>`).join("") : "<option value=''>No maps found</option>";
   $("crun").disabled = !items.length;
 }
