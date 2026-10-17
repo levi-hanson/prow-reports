@@ -1,8 +1,8 @@
 // "Full report" tab: load a results map, drop in the report generator's tables, pick pages and
 // detail spots, and download the whole evaluation report as one PDF.
 import { loadReportData, buildFullReport, renderInset, renderPickerBase, defaultInset, insetExtent, parseCsv, tableNumber, cleanTable,
-  derivedNumbers, defaultTexts, TEXT_EXAMPLES, computeTables, blankTable, tableHasData, featureAt, popupFields, defaultPopupFields, loadPopup, PAGES, INSETS } from "./report.js?v=20261017123523";
-import { DEFAULTS, layerKey, defaultOrder } from "./renderer.js?v=20261017123523";
+  derivedNumbers, defaultTexts, TEXT_EXAMPLES, computeTables, blankTable, tableHasData, featureAt, popupFields, defaultPopupFields, loadPopup, PAGES, INSETS } from "./report.js?v=20261017125522";
+import { DEFAULTS, layerKey, defaultOrder } from "./renderer.js?v=20261017125522";
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
@@ -23,7 +23,7 @@ const uploads = {};
 function blankState() {
   const d = new Date(), today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   return { fields: { coverName: "", city: "", shortName: "", year: String(new Date().getFullYear()), date: today, miles: "", ramps: "" },
-    tables: {}, reliability: blankTable("reliability"), include: PAGES.map((p) => p[0]), insets: {}, texts: null, textOverride: {}, popupOn: true, popup: null,
+    tables: {}, reliability: blankTable("reliability"), include: PAGES.map((p) => p[0]), insets: {}, texts: {}, textOverride: {}, popupOn: true, popup: null,
     notNeeded: { fields: {}, tables: {} }, icons: null, order: null, tableSource: {}, savedAt: null };
 }
 const save = () => { if (!mapId) return; S.savedAt = Date.now(); local.set(`report:${mapId}`, S); updateChecklist(); scheduleLive(); };
@@ -60,9 +60,9 @@ function log(msg, progress) {
 // ---------------------------------------------------------------- step 1: load
 async function loadData() {
   const id = $("rmap").value; if (!id) return;
-  $("rload").disabled = true; $("rlog").innerHTML = ""; $("rsteps").hidden = true;
+  $("rload").disabled = true; $("rload").classList.add("busy"); $("rlog").innerHTML = ""; $("rsteps").hidden = true;
   showSide(true);
-  $("rview").innerHTML = '<p class="pempty">Loading map data…</p>'; pstatus("Preview"); loadPdfJs().catch(() => {});
+  $("rview").innerHTML = '<p class="pempty busy">Loading map data…</p>'; pstatus("Preview"); loadPdfJs().catch(() => {});
   try {
     data = await loadReportData(deps(), ctx.SHARING, id, log);
     mapId = id;
@@ -70,6 +70,7 @@ async function loadData() {
     S = Object.assign(blankState(), stored || {});
     S.notNeeded = Object.assign({ fields: {}, tables: {} }, S.notNeeded || {});
     S.tableSource = S.tableSource || {};
+    S.texts = S.texts || {}; S.textOverride = S.textOverride || {};
     const md = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(S.fields.date || "");   // older saves used MM/DD/YYYY
     if (md) S.fields.date = `${md[3]}-${md[1].padStart(2, "0")}-${md[2].padStart(2, "0")}`;
     showRestored(stored && stored.savedAt);
@@ -89,7 +90,7 @@ async function loadData() {
     if (S.live) build(); else $("rview").innerHTML = '<p class="pempty">Live preview is off — tick <b>Live</b> or click <b>Refresh preview</b>.</p>';
     await renderPickers();
   } catch (e) { log(`Error: ${e.message}`); $("rview").innerHTML = `<p class="pempty">Couldn't load the map: ${esc(e.message)}</p>`; }
-  $("rload").disabled = false;
+  $("rload").disabled = false; $("rload").classList.remove("busy");
 }
 
 // ---------------------------------------------------------------- step 2: details
@@ -206,6 +207,7 @@ function renderTables() {
 // (re)filled, so uploads and hand edits are kept; the button (force=true) replaces 3–10 after confirming.
 async function calcTables(force) {
   const box = $("rcalcnotes"); box.textContent = "Calculating Tables 3–10 from ArcGIS…"; $("rcalc").disabled = true;
+  box.classList.add("busy"); $("rcalcbox").classList.add("working");
   try {
     const { tables, notes } = await computeTables({ fetchJson: ctx.fetchJson }, data, (s) => { box.textContent = s; });
     const kept = [];
@@ -215,7 +217,8 @@ async function calcTables(force) {
     }
     box.innerHTML = [...notes.map(esc), kept.length ? `Kept your ${kept.length === 1 ? "table" : "tables"} ${kept.join(", ")} (uploaded or edited) — use the button to replace with ArcGIS.` : ""].filter(Boolean).map((s) => `<div>${s}</div>`).join("") || "Tables 3–10 are up to date with ArcGIS.";
     save(); renderTables();
-  } catch (e) { box.textContent = `Couldn't calculate from ArcGIS: ${e.message}`; }
+  } catch (e) { box.textContent = `Couldn't calculate from ArcGIS: ${e.message}`; console.error(e); }
+  box.classList.remove("busy"); $("rcalcbox").classList.remove("working");
   $("rcalc").disabled = false;
 }
 
@@ -398,6 +401,8 @@ function showOverride(k) {
 }
 // recompute every non-overridden box from the current details, tables and layers
 function refreshTexts() {
+  if (!S.texts) S.texts = {};
+  if (!S.textOverride) S.textOverride = {};
   if (!data || !$("rtexts").querySelector("textarea")) return;
   const d = defaultTexts(effectiveFields(), data, S.reliability);
   for (const [k] of TEXT_ITEMS) {
@@ -543,7 +548,8 @@ function showSide(on) {
   $("rpreview").hidden = !on; $("rsplit").classList.toggle("has-preview", on);
   if (on && sideStale && lastPdf) { sideStale = false; showPdf(lastPdf.bytes.slice()); }
 }
-const pstatus = (s) => { $("rpstatus").textContent = s; };
+const busyText = (s) => /^(Updating|Loading|Checking|Calculating|Reading|Downloading|Drawing|Building|Matching)/i.test(String(s));
+const pstatus = (s) => { $("rpstatus").textContent = s; $("rpstatus").classList.toggle("busy", busyText(s)); };
 function scheduleLive() {
   if (!S || !data || !S.live || $("rpreview").hidden) return;
   clearTimeout(liveTimer); liveTimer = setTimeout(() => build(), 900);

@@ -1,7 +1,7 @@
-import { CONFIG } from "./config.js?v=20261017123523";
-import { buildReport, resolveLayers, layerKey, defaultOrder, ALL_KEY, DEFAULTS } from "./renderer.js?v=20261017123523";
-import { initReportTab, setReportMaps } from "./report-ui.js?v=20261017123523";
-import { initCompletenessTab, setCompletenessMaps } from "./completeness.js?v=20261017123523";
+import { CONFIG } from "./config.js?v=20261017125522";
+import { buildReport, resolveLayers, layerKey, defaultOrder, ALL_KEY, DEFAULTS } from "./renderer.js?v=20261017125522";
+import { initReportTab, setReportMaps } from "./report-ui.js?v=20261017125522";
+import { initCompletenessTab, setCompletenessMaps } from "./completeness.js?v=20261017125522";
 
 const $ = (id) => document.getElementById(id);
 const SHARING = `${CONFIG.portal}/sharing/rest`;
@@ -168,7 +168,8 @@ function loadPdfJs() {
   });
   return pdfjsReady;
 }
-const mstatus = (s) => { $("mpstatus").textContent = s; };
+const busyText = (s) => /^(Updating|Loading|Checking|Calculating|Reading|Downloading|Drawing|Building|Matching)/i.test(String(s));
+const mstatus = (s) => { $("mpstatus").textContent = s; $("mpstatus").classList.toggle("busy", busyText(s)); };
 function showMapPane(on) { $("mpreview").hidden = !on; $("msplit").classList.toggle("has-preview", on); }
 function scheduleMaps() {
   if (!$("mlive").checked || $("mpreview").hidden || $("msteps").hidden) return;
@@ -253,8 +254,8 @@ $("date").oninput = scheduleMaps;
 // steps 2–4 appear once a map is loaded (same pattern as the other tabs); picking another map hides them again
 $("mload").onclick = async () => {
   $("msteps").hidden = false; showMapPane(true); mres = null; $("mpick").hidden = true; $("mdl").classList.add("disabled");
-  $("mview").innerHTML = '<p class="pempty">Loading map data…</p>'; loadPdfJs().catch(() => {});
-  await loadIcons();
+  $("mview").innerHTML = '<p class="pempty busy">Loading map data…</p>'; loadPdfJs().catch(() => {});
+  $("mload").classList.add("busy"); await loadIcons(); $("mload").classList.remove("busy");
   if ($("mlive").checked) buildMaps(); else $("mview").innerHTML = '<p class="pempty">Live preview is off — tick <b>Live</b> or click <b>Refresh preview</b>.</p>';
 };
 $("map").onchange = () => { $("msteps").hidden = true; };

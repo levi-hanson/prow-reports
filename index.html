@@ -66,6 +66,14 @@ table.grid [contenteditable]:focus{outline:2px solid var(--accent);outline-offse
 @media (max-width:560px){.pickrow{flex-direction:column}.pickmap,.pickside{width:100%}}
 textarea{width:100%;font:inherit;font-size:14px;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--text);margin-top:4px;resize:vertical}
 #rtexts label{font-weight:600;font-size:13px}
+.busy::before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;background:currentColor;margin-right:8px;vertical-align:middle;animation:pulse 1s ease-in-out infinite}
+button.busy{position:relative}
+button.busy::before{background:#fff}
+button.secondary.busy::before{background:var(--accent)}
+.calcbox.working{border-color:var(--accent);animation:glow 1.4s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:.25;transform:scale(.75)}50%{opacity:1;transform:scale(1.15)}}
+@keyframes glow{0%,100%{box-shadow:0 0 0 0 transparent}50%{box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 25%,transparent)}}
+@media (prefers-reduced-motion:reduce){.busy::before,.calcbox.working{animation:none}}
 .calcbox{margin:12px 0;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
 .calcbox p{margin:0}
 .badge.src{color:var(--accent);border-color:var(--accent);font-weight:500}
@@ -313,6 +321,6 @@ table.ctable td:not(:first-child),table.ctable th:not(:first-child){text-align:c
 </main>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script type="module" src="app.js?v=20261017123523"></script>
+<script type="module" src="app.js?v=20261017125522"></script>
 </body>
 </html>
