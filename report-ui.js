@@ -1,8 +1,8 @@
 // "Full report" tab: load a results map, drop in the report generator's tables, pick pages and
 // detail spots, and download the whole evaluation report as one PDF.
 import { loadReportData, buildFullReport, renderInset, renderPickerBase, defaultInset, insetExtent, parseCsv, tableNumber, cleanTable,
-  derivedNumbers, defaultTexts, TEXT_EXAMPLES, computeTables, blankTable, tableHasData, featureAt, popupFields, defaultPopupFields, loadPopup, PAGES, INSETS } from "./report.js?v=20261017125522";
-import { DEFAULTS, layerKey, defaultOrder } from "./renderer.js?v=20261017125522";
+  derivedNumbers, defaultTexts, TEXT_EXAMPLES, computeTables, blankTable, tableHasData, featureAt, popupFields, defaultPopupFields, loadPopup, PAGES, INSETS } from "./report.js?v=20261017130757";
+import { DEFAULTS, layerKey, defaultOrder } from "./renderer.js?v=20261017130757";
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
@@ -206,7 +206,7 @@ function renderTables() {
 // Tables 3–10 from ArcGIS. On load (force=false) only blank tables or ones that came from ArcGIS before are
 // (re)filled, so uploads and hand edits are kept; the button (force=true) replaces 3–10 after confirming.
 async function calcTables(force) {
-  const box = $("rcalcnotes"); box.textContent = "Calculating Tables 3–10 from ArcGIS…"; $("rcalc").disabled = true;
+  const box = $("rcalcnotes"); box.textContent = "Calculating the tables from ArcGIS…"; $("rcalc").disabled = true;
   box.classList.add("busy"); $("rcalcbox").classList.add("working");
   try {
     const { tables, notes } = await computeTables({ fetchJson: ctx.fetchJson }, data, (s) => { box.textContent = s; });
@@ -215,7 +215,7 @@ async function calcTables(force) {
       const mine = !tableHasData(S.tables[n]) || S.tableSource[n] === "arcgis";
       if (force || mine) { S.tables[n] = t; S.tableSource[n] = "arcgis"; } else kept.push(n);
     }
-    box.innerHTML = [...notes.map(esc), kept.length ? `Kept your ${kept.length === 1 ? "table" : "tables"} ${kept.join(", ")} (uploaded or edited) — use the button to replace with ArcGIS.` : ""].filter(Boolean).map((s) => `<div>${s}</div>`).join("") || "Tables 3–10 are up to date with ArcGIS.";
+    box.innerHTML = [...notes.map(esc), kept.length ? `Kept your ${kept.length === 1 ? "table" : "tables"} ${kept.join(", ")} (uploaded or edited) — use the button to replace with ArcGIS.` : ""].filter(Boolean).map((s) => `<div>${s}</div>`).join("") || "The tables are up to date with ArcGIS.";
     save(); renderTables();
   } catch (e) { box.textContent = `Couldn't calculate from ArcGIS: ${e.message}`; console.error(e); }
   box.classList.remove("busy"); $("rcalcbox").classList.remove("working");
@@ -609,7 +609,7 @@ export function initReportTab(c) {
     log(`Read ${n} table${n === 1 ? "" : "s"}.`); save(); renderTables();
     $("rfiles").value = "";
   };
-  $("rcalc").onclick = () => { if (confirm("Replace Tables 3–10 with values calculated from ArcGIS? Uploaded or edited versions of those tables will be overwritten.")) calcTables(true); };
+  $("rcalc").onclick = () => { if (confirm("Replace Tables 1–10 with values calculated from ArcGIS? Uploaded or edited tables will be overwritten.")) calcTables(true); };
   $("rgo").onclick = () => { showSide(true); build(); };
   $("rlive").onchange = (e) => { S.live = e.target.checked; save(); if (S.live) build(); };
   $("rdl").onclick = (e) => { if ($("rdl").classList.contains("disabled") || !lastUrl) { e.preventDefault(); updateChecklist(); $("rcheck").scrollIntoView({ behavior: "smooth", block: "center" }); } };

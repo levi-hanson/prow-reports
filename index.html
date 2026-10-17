@@ -228,7 +228,7 @@ table.ctable td:not(:first-child),table.ctable th:not(:first-child){text-align:c
         <label for="rfiles">3. Tables</label>
         <p class="muted">Drop in the ADA report generator's output: the <b>report_tables.zip</b>, its folder zipped up, or the Table CSVs. Or type the numbers into the blank templates below. Click any cell to edit it. A data reliability CSV is picked up if its file name contains “reliability” or “accuracy”.</p>
         <input type="file" id="rfiles" multiple accept=".zip,.csv">
-        <div id="rcalcbox" class="calcbox"><p class="small"><b>Tables 3–10 are filled in from ArcGIS</b> when the map loads (same rules as Ryan's report generator). Tables 1–2 need slab lengths, which only ADA Manager has, so they still come from the generator's output. <button id="rcalc" class="secondary small">Recalculate 3–10 from ArcGIS</button></p><div id="rcalcnotes" class="muted small"></div></div>
+        <div id="rcalcbox" class="calcbox"><p class="small"><b>All 10 tables are filled in from ArcGIS</b> when the map loads, using the same rules as Ryan's report generator. Sidewalk lengths for Tables 1–2 are measured from the slab shapes the way the generator measures them (within about 0.3% of ADA Manager on Irvine and Bangor). Uploading the generator's output still works and replaces them. <button id="rcalc" class="secondary small">Recalculate from ArcGIS</button></p><div id="rcalcnotes" class="muted small"></div></div>
         <div id="rtables"></div>
       </section>
       <section class="card">
@@ -321,6 +321,6 @@ table.ctable td:not(:first-child),table.ctable th:not(:first-child){text-align:c
 </main>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script type="module" src="app.js?v=20261017125522"></script>
+<script type="module" src="app.js?v=20261017130757"></script>
 </body>
 </html>

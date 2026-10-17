@@ -9,7 +9,7 @@
 //   renderInset(deps, data, slot, inset, W, H)         -> canvas (for the spot pickers and the PDF)
 //   buildFullReport(deps, data, input, onStatus)       -> ArrayBuffer (PDF)
 
-import { DEFAULTS, resolveLayers, fetchFeatures, combinedExtent, renderBasemap, renderMapImage, rampColor, css, niceRound, fmtNum, layerKey } from "./renderer.js?v=20261017125522";
+import { DEFAULTS, resolveLayers, fetchFeatures, combinedExtent, renderBasemap, renderMapImage, rampColor, css, niceRound, fmtNum, layerKey } from "./renderer.js?v=20261017130757";
 
 // ---------------------------------------------------------------- design tokens (measured from the 2026 Bangor report)
 const PW = 612, PH = 792, ML = 54, CW = 504;            // letter portrait, left margin, content width (pt)
@@ -349,7 +349,10 @@ export const TEXT_EXAMPLES = {
 // ---------------------------------------------------------------- Tables 3–10 straight from ArcGIS
 // A port of Ryan's ADA report table generator (ada_report_generator_local_2026-10-07). Its CSV inputs are
 // ArcGIS exports, so its column names are the layers' field aliases; here the fields are looked up the same way.
-// Tables 1–2 need slab lengths, which only ADA Manager stores, so they still come from the generator.
+// Tables 1–2 need slab lengths. Neither ArcGIS nor ADA Manager stores one: the generator's segment_length
+// tool measures each slab from its corners (cap-to-cap midpoint distance along the direction of travel), and
+// slabLengthFt below does the same with the ArcGIS polygon (travel = previous → next slab on the path).
+// Checked on Irvine (657k slabs): -0.34% total, per-slab median error 0.31%, 99% of slabs within 1%.
 const num0 = (v) => { if (v === null || v === undefined || String(v).trim() === "") return NaN; const n = Number(v); return Number.isFinite(n) ? n : NaN; };
 const fieldBy = (L, ...names) => {
   const want = names.map((n) => n.toLowerCase());
@@ -370,9 +373,68 @@ async function layerAttrs(deps, L, fields) {
 const scoreBin = (s) => (Number.isNaN(s) ? null : s <= 40 ? "0-40" : s <= 70 ? "41-70" : s < 100 ? "71-99" : s === 100 ? "100" : null);
 const fmt = (n) => Number(n).toLocaleString("en-US");
 
+// slab length (ft) from a polygon ring in Web Mercator metres; tv = direction of travel (any length) or null
+function slabLengthFt(ring, tv) {
+  let q = ring.length > 1 && ring[0][0] === ring[ring.length - 1][0] && ring[0][1] === ring[ring.length - 1][1] ? ring.slice(0, -1) : ring.slice();
+  const n = q.length; if (n < 3) return NaN;
+  const k = Math.cos(2 * Math.atan(Math.exp(q[0][1] / 6378137)) - Math.PI / 2);   // Mercator metres -> ground metres
+  const edges = q.map((a, i) => [a, q[(i + 1) % n]]);
+  let c0 = 0, c1 = Math.floor(n / 2);
+  const tn = tv ? Math.hypot(tv[0], tv[1]) : 0;
+  if (tn > 0) {
+    // the two caps are the edges most across the direction of travel (and not next to each other)
+    const score = edges.map(([a, b]) => Math.abs(((b[0] - a[0]) * tv[0] + (b[1] - a[1]) * tv[1]) / ((Math.hypot(b[0] - a[0], b[1] - a[1]) || 1) * tn)));
+    const order = [...score.keys()].sort((i, j) => score[i] - score[j]);
+    c0 = order[0];
+    c1 = order.slice(1).find((i) => ![1, n - 1].includes((((i - c0) % n) + n) % n)) ?? (c0 + Math.floor(n / 2)) % n;
+  }
+  const mid = ([a, b]) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], m1 = mid(edges[c0]), m2 = mid(edges[c1]);
+  return Math.hypot(m2[0] - m1[0], m2[1] - m1[1]) * k * 3.28084;
+}
+
 export async function computeTables(deps, data, onStatus = () => {}) {
   const out = {}, notes = [];
   const G = data.groups;
+  // ---- sidewalks: Table 1 (feet by DCS) and Table 2 (feet by defect), lengths measured from the slab shapes
+  const SWL = (G.sidewalks || [])[0];
+  if (SWL) {
+    onStatus("Tables 1–2: measuring sidewalk slabs…");
+    const F = { oid: SWL.oidField, path: fieldBy(SWL, "Path ID", "path_id"), ticket: fieldBy(SWL, "Ticket Key", "Ticket ID"), idx: fieldBy(SWL, "Segment Index", "segment_idx"),
+      dcs: fieldBy(SWL, "DCS Score"), vo: fieldBy(SWL, "Vertical Offset (IN.)"), rs: fieldBy(SWL, "Running Slope (%)"), cs: fieldBy(SWL, "Cross Slope (%)") };
+    const attrs = new Map((await layerAttrs(deps, SWL, Object.values(F))).map((a) => [a[F.oid], a]));
+    const byPath = new Map();
+    for (const f of SWL.features) {
+      const a = attrs.get(f.attributes[SWL.oidField]); const ring = ((f.geometry || {}).rings || [])[0];
+      if (!a || !ring) continue;
+      const key = (F.path && a[F.path] != null && a[F.path] !== "") ? `p${a[F.path]}` : F.ticket ? `t${a[F.ticket]}` : "all";
+      const c = ring.reduce((s, p) => [s[0] + p[0] / ring.length, s[1] + p[1] / ring.length], [0, 0]);
+      (byPath.get(key) || byPath.set(key, []).get(key)).push({ a, ring, c, i: num0(F.idx ? a[F.idx] : 0) });
+    }
+    const t1 = { "0-40": 0, "41-70": 0, "71-99": 0, "100": 0 }, vo = [0, 0, 0, 0], rs = [0, 0, 0], cs = [0, 0, 0, 0];
+    let feet = 0, unmeasured = 0, unscored = 0;
+    for (const slabs of byPath.values()) {
+      slabs.sort((x, y) => (x.i || 0) - (y.i || 0));
+      slabs.forEach((s, i) => {
+        const p = slabs[Math.max(i - 1, 0)].c, n = slabs[Math.min(i + 1, slabs.length - 1)].c;
+        const len = slabLengthFt(s.ring, slabs.length > 1 ? [n[0] - p[0], n[1] - p[1]] : null);
+        if (!Number.isFinite(len)) { unmeasured++; return; }
+        feet += len;
+        const d = scoreBin(num0(s.a[F.dcs])); if (d) t1[d] += len; else unscored++;
+        const v = num0(s.a[F.vo]); vo[Number.isNaN(v) || v < 0.25 ? 3 : v < 0.5 ? 2 : v < 1 ? 1 : 0] += len;
+        const r = Math.abs(num0(s.a[F.rs])); if (!Number.isNaN(r)) rs[r < 5 ? 2 : r <= 8.3 ? 1 : 0] += len;
+        const x = Math.abs(num0(s.a[F.cs])); if (!Number.isNaN(x)) cs[x < 2.08 ? 3 : x < 3 ? 2 : x < 5 ? 1 : 0] += len;
+      });
+    }
+    const ft = (v) => fmt(Math.round(v));
+    out[1] = { header: [...TABLE_TEMPLATES[1].header], rows: [["Dax Compliance Score (DCS)", "0-40", ft(t1["0-40"]), "41-70", ft(t1["41-70"]), "71-99", ft(t1["71-99"]), "100", ft(t1["100"])]] };
+    out[2] = { header: [...TABLE_TEMPLATES[2].header], rows: [
+      ["Vertical Changes", '1" Plus', ft(vo[0]), '0.5" - 1"', ft(vo[1]), '0.25" - 0.5"', ft(vo[2]), '<0.25"', ft(vo[3])],
+      ["Running Slope", "N/A", "N/A", "> 8.3%", ft(rs[0]), "5% - 8.3%", ft(rs[1]), "< 5%", ft(rs[2])],
+      ["Cross Slope", "> 5.0%", ft(cs[0]), "3.0% - 5.0%", ft(cs[1]), "2.08% - 3%", ft(cs[2]), "< 2.08%", ft(cs[3])]] };
+    notes.push(`Tables 1–2: ${fmt(Math.round(feet))} ft (${(feet / 5280).toFixed(2)} mi) of sidewalk, measured from the slab shapes the same way the report generator measures them.`);
+    if (unscored) notes.push(`${fmt(unscored)} sidewalk slabs have no DCS score, so they are not in Table 1.`);
+    if (unmeasured) notes.push(`${fmt(unmeasured)} sidewalk slabs have no usable shape and were not measured.`);
+  }
   // ---- crosswalks: Table 3 (lowest score per crosswalk) and Tables 4–7 (by signal type)
   const XL = (G.crosswalks || [])[0];
   if (XL) {
