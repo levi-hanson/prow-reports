@@ -61,7 +61,7 @@ function log(msg, progress) {
 async function loadData() {
   const id = $("rmap").value; if (!id) return;
   $("rload").disabled = true; $("rlog").innerHTML = ""; $("rsteps").hidden = true;
-  showSide(!popAlive);
+  showSide(true);
   $("rview").innerHTML = '<p class="pempty">Loading map data…</p>'; pstatus("Preview"); loadPdfJs().catch(() => {});
   try {
     data = await loadReportData(deps(), ctx.SHARING, id, log);
@@ -484,7 +484,6 @@ function updateChecklist() {
   const box = $("rcheck"); if (!box) return;
   const p = problems();
   const dl = $("rdl"); if (dl) { dl.classList.toggle("disabled", p.length > 0); dl.title = p.length ? "Finish the checklist (step 8) before downloading" : ""; }
-  if (channel) channel.postMessage({ type: "download", canDownload: p.length === 0 });
   box.innerHTML = p.length
     ? `<p class="warn"><b>${p.length} item${p.length === 1 ? "" : "s"}</b> still need to be filled in or marked <b>Not needed</b>:</p><ul>${p.map(([id, s]) => `<li><a href="#" data-go="${id}">${esc(s)}</a></li>`).join("")}</ul>`
     : `<p class="ok">Everything is filled in or marked not needed.</p>`;
@@ -511,38 +510,20 @@ function loadPdfJs() {
   });
   return pdfjsReady;
 }
-// live pop-out window (viewer.html) follows this preview over a BroadcastChannel
-const channel = typeof BroadcastChannel !== "undefined" ? new BroadcastChannel("prow-report-preview") : null;
-let lastPdf = null;   // { bytes, name, status }
-const canDownload = () => problems().length === 0;
-const sendPdf = () => { if (channel && lastPdf) channel.postMessage({ type: "pdf", ...lastPdf, canDownload: canDownload() }); };
-// While the pop-out is open the side pane is hidden (the page goes full width); closing the pop-out brings it back.
-let popWin = null, popAlive = false, sideStale = false;
+let lastPdf = null, sideStale = false;   // latest build, redrawn if the pane was closed while it arrived
 function showSide(on) {
   $("rpreview").hidden = !on; $("rsplit").classList.toggle("has-preview", on);
   if (on && sideStale && lastPdf) { sideStale = false; showPdf(lastPdf.bytes.slice()); }
 }
-function setPopout(on) {
-  if (popAlive === on) return;
-  popAlive = on; showSide(!on); updatePopNote();
-  if (on) { if (lastPdf) sendPdf(); else if (data && S && S.live) build(); }
-}
-function updatePopNote() { const n = $("rpopnote"); if (n) n.hidden = !popAlive; }
-setInterval(() => { if (popAlive && popWin && popWin.closed) { popWin = null; setPopout(false); } }, 1000);
-if (channel) channel.onmessage = (ev) => {
-  const t = (ev.data || {}).type;
-  if (t === "hello") { sendPdf(); setPopout(true); }
-  if (t === "bye") setPopout(false);
-};
-const pstatus = (s) => { $("rpstatus").textContent = s; if (channel) channel.postMessage({ type: "status", text: s }); };
+const pstatus = (s) => { $("rpstatus").textContent = s; };
 function scheduleLive() {
-  if (!S || !data || !S.live || ($("rpreview").hidden && !popAlive)) return;
+  if (!S || !data || !S.live || $("rpreview").hidden) return;
   clearTimeout(liveTimer); liveTimer = setTimeout(() => build(), 900);
 }
 async function build() {
   if (building) { pending = true; return; }
   building = true; pending = false;
-  if (!popAlive) showSide(true);
+  showSide(true);
   pstatus("Updating…");
   try {
     const d = { ...deps(), reportFonts: await reportFonts(), assets: await assets() };
@@ -560,7 +541,7 @@ async function build() {
     if ($("rpreview").hidden) sideStale = true; else await showPdf(bytes.slice());
     const done = `Up to date · ${new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", second: "2-digit" })}`;
     pstatus(done);
-    lastPdf = { bytes, name, status: done }; sendPdf();
+    lastPdf = { bytes };
   } catch (e) { pstatus(`Error: ${e.message}`); log(`Error: ${e.message}`); }
   building = false;
   updateChecklist();
@@ -592,12 +573,11 @@ export function initReportTab(c) {
     log(`Read ${n} table${n === 1 ? "" : "s"}.`); save(); renderTables();
     $("rfiles").value = "";
   };
-  $("rgo").onclick = () => { if (!popAlive) showSide(true); build(); };
+  $("rgo").onclick = () => { showSide(true); build(); };
   $("rlive").onchange = (e) => { S.live = e.target.checked; save(); if (S.live) build(); };
   $("rdl").onclick = (e) => { if ($("rdl").classList.contains("disabled") || !lastUrl) { e.preventDefault(); updateChecklist(); $("rcheck").scrollIntoView({ behavior: "smooth", block: "center" }); } };
-  $("ropen").onclick = () => { popWin = window.open("viewer.html", "prow-report-viewer", "popup,width=900,height=1000"); if (popWin) setPopout(true); };
   $("rclose").onclick = () => showSide(false);
-  $("rpopback").onclick = (e) => { e.preventDefault(); if (popWin && !popWin.closed) popWin.close(); popWin = null; setPopout(false); };
+
   $("rfresh").onclick = startFresh;
 }
 // called whenever the map list is refreshed
