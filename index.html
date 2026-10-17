@@ -122,6 +122,14 @@ p.small,details.small{font-size:12px}
 .cbig b{font-size:26px;color:var(--accent)}
 .cbig span{font-size:13px}
 @media (max-width:700px){.cbig{grid-template-columns:repeat(2,1fr)}}
+.cnotes{margin:16px 0 4px;padding-top:12px;border-top:1px solid var(--line)}
+.cnotes > label{font-weight:600;font-size:14px}
+.cnotes input[type=number]{width:64px;padding:2px 6px;display:inline-block}
+.cnote{display:flex;gap:10px;align-items:flex-start;margin:10px 0}
+.cnote .cref{flex:0 0 26px;height:26px;border-radius:13px;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;color:var(--muted)}
+.cnote.on .cref{background:var(--accent);border-color:var(--accent);color:#fff}
+.cnote > div{flex:1;min-width:0}
+.cnote textarea{margin-top:4px}
 table.ctable td:not(:first-child),table.ctable th:not(:first-child){text-align:center;white-space:nowrap}
 </style>
 </head>
@@ -247,6 +255,7 @@ table.ctable td:not(:first-child),table.ctable th:not(:first-child){text-align:c
         <div class="fields">
           <div class="fld"><label for="cclient">Name on the certificate</label><input id="cclient" placeholder="e.g. Bangor, ME"></div>
           <div class="fld"><label for="cissuer">Issued by</label><input id="cissuer" value="Daxbot"></div>
+          <input id="cthresh" type="hidden" value="95">
         </div>
         <p style="margin-top:14px"><button id="ccert">Download certificate (PDF)</button> <button id="ccsv" class="secondary">Download missing items (CSV)</button></p>
       </div>
@@ -266,6 +275,6 @@ table.ctable td:not(:first-child),table.ctable th:not(:first-child){text-align:c
 </main>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script type="module" src="app.js?v=20261017114159"></script>
+<script type="module" src="app.js?v=20261017114629"></script>
 </body>
 </html>

@@ -5,7 +5,7 @@
 //
 // Core functions are environment-agnostic (deps: fetchJson, jsPDF, reportFonts, assets) for Node testing.
 
-import { resolveLayers } from "./renderer.js?v=20261017114159";
+import { resolveLayers } from "./renderer.js?v=20261017114629";
 
 export const CHECKS = [
   { key: "dcs", label: "DCS scores reported", field: /^DCS_SCORE$/i },
@@ -121,7 +121,12 @@ export const toCsv = (rows) => [["Layer", "OBJECTID", "Ticket key", "Missing"], 
 
 // ---------------------------------------------------------------- certificate PDF
 const NAVY = [34, 57, 65], TEAL = [68, 114, 129], HEAD = [38, 41, 46], BODY = [84, 85, 87], STRIPE = [211, 217, 109], TINT = [244, 250, 250];
-export function buildCertificate(deps, res, { client, issuedBy = "Daxbot", date } = {}) {
+// values below `threshold` are "flagged"; a layer with a note gets a reference number on its flagged
+// values (or its name, if nothing is flagged) and the note is printed as a numbered footnote
+export const layerValues = (L) => [...["dcs", "prowag", "images"].map((k) => (L.checks[k] && L.checks[k].applies ? pct(L.checks[k].present, L.total) : null)), pct(completeCount(L), L.total)];
+export const isFlagged = (L, threshold) => L.total > 0 && layerValues(L).some((v) => v !== null && v < threshold);
+
+export function buildCertificate(deps, res, { client, issuedBy = "Daxbot", date, notes = {}, threshold = 95 } = {}) {
   const doc = new deps.jsPDF({ orientation: "portrait", unit: "pt", format: "letter", compress: true });
   const F = deps.reportFonts;
   for (const [n, b] of [["MontB", F.montB], ["MontSB", F.montSB], ["PopL", F.popL], ["Pop", F.pop], ["PopM", F.popM], ["PopSB", F.popSB]]) { doc.addFileToVFS(`${n}.ttf`, b); doc.addFont(`${n}.ttf`, n, "normal"); }
@@ -161,21 +166,36 @@ export function buildCertificate(deps, res, { client, issuedBy = "Daxbot", date 
   doc.setFillColor(...NAVY); doc.rect(M, y, W - 2 * M, 24, "F");
   head.forEach((h, i) => T(h, i ? cols[i] + cw[i] / 2 : cols[0] + 8, y + 16, "MontSB", 9.5, [255, 255, 255], i ? { align: "center" } : {}));
   y += 24;
-  // every layer gets a row: rows shrink to fit the space above the method note instead of dropping layers
+  // every layer gets a row; rows (and footnotes) shrink to fit the space above the method note, so it's always one page
   const rowsL = res.layers.filter((L) => L.total > 0);   // empty layers have nothing to certify
-  const rowH = Math.min(21, (H - 150 - y) / Math.max(rowsL.length, 1)), maxRows = rowsL.length;
-  rowsL.slice(0, maxRows).forEach((L, r) => {
+  const noted = rowsL.filter((L) => String(notes[L.title] || "").trim()), ref = new Map(noted.map((L, i) => [L, i + 1]));
+  const fy = H - 132;
+  let fnSize = 8, fnLines;
+  const measure = () => { doc.setFont("PopL", "normal"); doc.setFontSize(fnSize); fnLines = noted.map((L) => doc.splitTextToSize(`${ref.get(L)}   ${L.title}: ${String(notes[L.title]).trim()}`, W - 2 * M)); return fnLines.reduce((a, l) => a + l.length, 0) * fnSize * 1.35 + (noted.length ? 16 : 0); };
+  let fnH = measure();
+  while (fnH > 150 && fnSize > 6) { fnSize -= 0.5; fnH = measure(); }
+  const rowH = Math.max(11, Math.min(21, (fy - 18 - fnH - y) / Math.max(rowsL.length, 1)));
+  rowsL.forEach((L, r) => {
     if (r % 2) { doc.setFillColor(...TINT); doc.rect(M, y, W - 2 * M, rowH, "F"); }
-    const ty = y + rowH / 2 + 3.2, fs = rowH < 17 ? 8 : 9;
-    T(L.title.length > 30 ? `${L.title.slice(0, 29)}…` : L.title, cols[0] + 8, ty, "Pop", fs, BODY);
+    const ty = y + rowH / 2 + 3.2, fs = rowH < 15 ? 7.5 : rowH < 17 ? 8 : 9, n = ref.get(L), vals = layerValues(L);
+    const sup = (txt, cx, font, centered) => { if (!n) return; doc.setFont(font, "normal"); doc.setFontSize(fs); const w = doc.getTextWidth(txt); T(String(n), (centered ? cx + w / 2 : cx + w) + 1.2, ty - fs * 0.38, "PopSB", fs * 0.68, TEAL); };
+    const name = L.title.length > 30 ? `${L.title.slice(0, 29)}…` : L.title, anyFlag = vals.some((v) => v !== null && v < threshold);
+    T(name, cols[0] + 8, ty, "Pop", fs, BODY); if (!anyFlag) sup(name, cols[0] + 8, "Pop", false);
     T(L.total.toLocaleString(), cols[1] + cw[1] / 2, ty, "PopM", fs, BODY, { align: "center" });
-    ["dcs", "prowag", "images"].forEach((k, i) => { const c = L.checks[k]; T(c && c.applies ? fmtPct(pct(c.present, L.total)) : "—", cols[i + 2] + cw[i + 2] / 2, ty, "PopM", fs, BODY, { align: "center" }); });
-    T(fmtPct(pct(completeCount(L), L.total)), cols[5] + cw[5] / 2, ty, "PopSB", fs, NAVY, { align: "center" });
+    vals.forEach((v, i) => {
+      const txt = v === null ? "—" : fmtPct(v), cx = cols[i + 2] + cw[i + 2] / 2, font = i === 3 ? "PopSB" : "PopM";
+      T(txt, cx, ty, font, fs, i === 3 ? NAVY : BODY, { align: "center" });
+      if (v !== null && v < threshold) sup(txt, cx, font, true);
+    });
     y += rowH;
   });
   doc.setDrawColor(...TEAL); doc.setLineWidth(0.6); doc.line(M, y, W - M, y);
+  // footnotes
+  if (noted.length) {
+    y += 14; doc.setFont("PopL", "normal"); doc.setFontSize(fnSize); doc.setTextColor(...BODY);
+    fnLines.forEach((ls) => { doc.text(ls, M, y, { baseline: "alphabetic", lineHeightFactor: 1.35 }); y += ls.length * fnSize * 1.35; });
+  }
   // footer: method + signature
-  const fy = H - 132;
   T("Method", M, fy, "MontSB", 9.5, HEAD);
   doc.setFont("PopL", "normal"); doc.setFontSize(8); doc.setTextColor(...BODY);
   doc.text(doc.splitTextToSize("Percentages are features with a value present divided by all features in the layer, checked directly against the ArcGIS feature services. \"Fully complete\" counts features missing nothing that applies to them; a feature missing two things counts once. A dash means the check does not apply. Figures are rounded down, so 100% means nothing is missing.", 300), M, fy + 14, { lineHeightFactor: 1.4 });
@@ -192,7 +212,10 @@ export function buildCertificate(deps, res, { client, issuedBy = "Daxbot", date 
 // ---------------------------------------------------------------- browser tab
 const $ = (id) => document.getElementById(id);
 const esc = (v) => String(v ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
-let ctx = null, last = null, fontCache = null, assetCache = null;
+let ctx = null, last = null, lastId = null, fontCache = null, assetCache = null;
+const store = { get: (k) => { try { return JSON.parse(localStorage.getItem(k)) || null; } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} } };
+let notes = {};
+const threshold = () => { const v = parseFloat($("cthresh").value); return v > 0 && v <= 100 ? v : 95; };
 async function certDeps() {
   if (!fontCache) {
     const get = async (f) => { const b = new Uint8Array(await (await fetch(`fonts/${f}`)).arrayBuffer()); let s = ""; for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode(...b.subarray(i, i + 0x8000)); return btoa(s); };
@@ -219,14 +242,35 @@ function renderResults() {
   $("cresults").innerHTML = `<div class="cbig">${big.map(([k, label, main]) => `<div class="${main ? "main" : ""}"><b>${fmtPct(s[k].pct)}</b><span>${label}</span><span class="muted small">${s[k].total ? `${s[k].present.toLocaleString()} of ${s[k].total.toLocaleString()}` : "not applicable"}</span></div>`).join("")}</div>
     <div class="scroll"><table class="grid ctable"><tr><th>Layer</th><th>Features</th>${CHECKS.map((c) => `<th>${c.label}</th>`).join("")}<th>${COMPLETE_LABEL}</th></tr>
     ${last.layers.map((L) => { const cc = completeCount(L); return `<tr><td>${esc(L.title)}</td><td>${L.total.toLocaleString()}</td>${CHECKS.map((c) => `<td>${cell(L.checks[c.key], L.total)}</td>`).join("")}<td><b>${fmtPct(pct(cc, L.total))}</b><span class="muted small"> · ${(L.total - cc).toLocaleString()} incomplete</span></td></tr>`; }).join("")}</table></div>
+    <div id="cnotes"></div>
     <p class="muted small">Checked ${last.checkedAt.toLocaleString("en-US")}. Rounded down, so 100% means nothing is missing. A dash means the check doesn't apply: the layer has no such field, the field is hidden in the map's popup (not part of what the client gets), or the layer doesn't store images.</p>`;
   $("cactions").hidden = false;
+  renderNotes();
+}
+// a note box for every layer with a value under the threshold (plus any layer that already has a note)
+function renderNotes() {
+  const th = threshold(), rows = last.layers.filter((L) => L.total > 0 && (isFlagged(L, th) || String(notes[L.title] || "").trim()));
+  let n = 0;
+  $("cnotes").innerHTML = `<div class="cnotes"><label>Notes for the certificate <span class="muted small">— layers under <input id="cthresh2" type="number" min="1" max="100" step="0.5" value="${th}" aria-label="Flag threshold"> %</span></label>
+    ${rows.length ? rows.map((L) => { const has = String(notes[L.title] || "").trim(); if (has) n++;
+      const low = layerValues(L).map((v, i) => (v !== null && v < th ? `${["DCS", "PROWAG", "images", "complete"][i]} ${fmtPct(v)}` : null)).filter(Boolean).join(", ");
+      return `<div class="cnote ${has ? "on" : ""}"><span class="cref">${has ? n : "—"}</span><div><b>${esc(L.title)}</b> <span class="muted small">${low || "no values under the threshold"}</span>
+        <textarea data-l="${esc(L.title)}" rows="2" placeholder="Explain the gap — e.g. 13 stops had no sidewalk photo within 10 m and are scheduled for recollection">${esc(notes[L.title] || "")}</textarea></div></div>`; }).join("")
+      : '<p class="muted small">Every layer is at or above the threshold — no notes needed.</p>'}
+    <p class="muted small">A note puts a reference number next to that layer's flagged values on the certificate and prints the explanation as a footnote. Leave a box empty for no footnote.</p></div>`;
+  $("cnotes").querySelectorAll("textarea").forEach((ta) => ta.oninput = () => {
+    notes[ta.dataset.l] = ta.value; store.set(`cnotes:${lastId}`, notes);
+    // renumber without redrawing (keeps the cursor in the box)
+    let k = 0; $("cnotes").querySelectorAll(".cnote").forEach((d) => { const on = !!d.querySelector("textarea").value.trim(); d.classList.toggle("on", on); d.querySelector(".cref").textContent = on ? ++k : "—"; });
+  });
+  $("cthresh2").onchange = () => { $("cthresh").value = $("cthresh2").value; store.set("cthresh", threshold()); renderNotes(); };
 }
 async function run() {
   const id = $("cmap").value; if (!id) return;
   $("crun").disabled = true; $("clog").innerHTML = ""; $("cresults").innerHTML = ""; $("cactions").hidden = true;
   try {
     last = await checkMap({ fetchJson: ctx.fetchJson }, ctx.SHARING, id, log);
+    lastId = id; notes = store.get(`cnotes:${id}`) || {};
     if (!$("cclient").value.trim()) $("cclient").value = last.title.replace(/\s*Results Map\s*$/i, "").trim();
     log("Done."); renderResults();
   } catch (e) { log(`Error: ${e.message}`); }
@@ -237,8 +281,9 @@ export function initCompletenessTab(c) {
   $("cfind").onclick = () => ctx.searchMaps($("csearch").value.trim()).catch((e) => log(`Error: ${e.message}`));
   $("csearch").onkeydown = (e) => { if (e.key === "Enter") $("cfind").click(); };
   $("crun").onclick = run;
+  const th = store.get("cthresh"); if (th) $("cthresh").value = th;
   $("ccert").onclick = async () => {
-    try { const pdf = buildCertificate(await certDeps(), last, { client: $("cclient").value.trim(), issuedBy: $("cissuer").value.trim() || "Daxbot" }); download(new Blob([pdf], { type: "application/pdf" }), `${safe($("cclient").value || last.title)}_Certificate_of_Completeness.pdf`); }
+    try { const pdf = buildCertificate(await certDeps(), last, { client: $("cclient").value.trim(), issuedBy: $("cissuer").value.trim() || "Daxbot", notes, threshold: threshold() }); download(new Blob([pdf], { type: "application/pdf" }), `${safe($("cclient").value || last.title)}_Certificate_of_Completeness.pdf`); }
     catch (e) { log(`Error: ${e.message}`); }
   };
   $("ccsv").onclick = async () => {
