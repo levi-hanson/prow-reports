@@ -1,8 +1,8 @@
 // "Full report" tab: load a results map, drop in the report generator's tables, pick pages and
 // detail spots, and download the whole evaluation report as one PDF.
 import { loadReportData, buildFullReport, renderInset, renderPickerBase, defaultInset, insetExtent, parseCsv, tableNumber, cleanTable,
-  derivedNumbers, defaultTexts, TEXT_EXAMPLES, computeTables, blankTable, tableHasData, featureAt, popupFields, defaultPopupFields, loadPopup, PAGES, INSETS } from "./report.js?v=20261017143717";
-import { DEFAULTS, layerKey, defaultOrder } from "./renderer.js?v=20261017143717";
+  derivedNumbers, defaultTexts, TEXT_EXAMPLES, computeTables, blankTable, tableHasData, featureAt, popupFields, defaultPopupFields, loadPopup, PAGES, INSETS } from "./report.js?v=20261017143728";
+import { DEFAULTS, layerKey, defaultOrder } from "./renderer.js?v=20261017143728";
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
@@ -227,6 +227,7 @@ async function calcTables(force) {
     S.calcNotes = notes;
     const kept = [];
     for (const [n, t] of Object.entries(tables)) {
+      if (want && !want.has(+n)) continue;   // came along with a wanted table from the same layer
       const mine = !tableHasData(S.tables[n]) || S.tableSource[n] === "arcgis";
       if (force || mine) { S.tables[n] = t; S.tableSource[n] = "arcgis"; } else kept.push(n);
     }
