@@ -126,8 +126,8 @@ p.small,details.small{font-size:12px}
   </section>
 
   <nav class="tabs" id="tabs" hidden role="tablist">
-    <button role="tab" data-tab="tab-maps" aria-selected="true">Map PDFs</button>
-    <button role="tab" data-tab="tab-report" aria-selected="false">Full report</button>
+    <button role="tab" data-tab="tab-report" aria-selected="true">Full report</button>
+    <button role="tab" data-tab="tab-maps" aria-selected="false">Map PDFs</button>
   </nav>
   <div id="tab-maps" class="tabpane">
   <section id="app" class="card" hidden>
@@ -162,9 +162,10 @@ p.small,details.small{font-size:12px}
    <div class="rleft">
     <section class="card">
       <p class="muted">Builds the whole Public Rights-of-Way Evaluation report as one PDF: cover, overview, data reliability, every map and table.</p>
-      <label for="rmap">1. Pick the results map</label>
-      <div class="row"><select id="rmap"></select><button id="rload" class="narrow" disabled>Load map data</button></div>
-      <p class="muted">Uses the map search on the Map PDFs tab. Loading downloads every layer once (about a minute for a large city).</p>
+      <label for="rsearch">1. Find the results map</label>
+      <div class="row"><input id="rsearch" placeholder="e.g. Hilton Head Results Map"><button id="rfind" class="secondary narrow">Search</button></div>
+      <div class="row" style="margin-top:8px"><select id="rmap" aria-label="Results map"></select><button id="rload" class="narrow" disabled>Load map data</button></div>
+      <p class="muted">Loading downloads every layer once (about a minute for a large city).</p>
       <div id="rlog"></div>
     </section>
     <div id="rsteps" hidden>
@@ -232,6 +233,6 @@ p.small,details.small{font-size:12px}
 </main>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script type="module" src="app.js?v=20261016185040"></script>
+<script type="module" src="app.js?v=20261016185054"></script>
 </body>
 </html>

@@ -1,6 +1,6 @@
-import { CONFIG } from "./config.js?v=20261016185040";
-import { buildReport, resolveLayers, layerKey, defaultOrder, ALL_KEY, DEFAULTS } from "./renderer.js?v=20261016185040";
-import { initReportTab, setReportMaps } from "./report-ui.js?v=20261016185040";
+import { CONFIG } from "./config.js?v=20261016185054";
+import { buildReport, resolveLayers, layerKey, defaultOrder, ALL_KEY, DEFAULTS } from "./renderer.js?v=20261016185054";
+import { initReportTab, setReportMaps } from "./report-ui.js?v=20261016185054";
 
 const $ = (id) => document.getElementById(id);
 const SHARING = `${CONFIG.portal}/sharing/rest`;
@@ -64,9 +64,10 @@ function log(msg, progress) {
   el.scrollTop = el.scrollHeight;
 }
 
-async function searchMaps() {
-  const q = $("search").value.trim();
-  const sel = $("map"); sel.innerHTML = "<option>Searching…</option>";
+// one search feeds both tabs; q comes from whichever tab's search box was used
+async function searchMaps(q = $("search").value.trim()) {
+  $("search").value = q; $("rsearch").value = q;
+  const sel = $("map"); sel.innerHTML = "<option>Searching…</option>"; $("rmap").innerHTML = "<option>Searching…</option>";
   const me = await fetchJson(`${SHARING}/portals/self`, {});
   const r = await fetchJson(`${SHARING}/search`, { q: `${q ? `title:"${q.replace(/"/g, "")}" ` : ""}type:"Web Map" orgid:${me.id}`, num: 100, sortField: "title", sortOrder: "asc" });
   const items = (r.results || []).filter((i) => i.type === "Web Map");
@@ -192,7 +193,8 @@ async function init() {
     document.body.classList.toggle("wide", b.dataset.tab === "tab-report");
   });
   // the Full report tab must never stop the Map PDFs tab from working
-  try { initReportTab({ fetchJson, fetchImage, SHARING, createCanvas, loadImage, blobBytes }); } catch (e) { console.error("Full report tab:", e); }
+  try { initReportTab({ fetchJson, fetchImage, SHARING, createCanvas, loadImage, blobBytes, searchMaps }); } catch (e) { console.error("Full report tab:", e); }
+  document.querySelector('#tabs [data-tab="tab-report"]').click();   // Full report is the default screen
   $("search").value = CONFIG.defaultSearch;
   $("page").value = DEFAULTS.page; $("basemap").value = DEFAULTS.basemap;
   await searchMaps();

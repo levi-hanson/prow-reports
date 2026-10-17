@@ -1,8 +1,8 @@
 // "Full report" tab: load a results map, drop in the report generator's tables, pick pages and
 // detail spots, and download the whole evaluation report as one PDF.
 import { loadReportData, buildFullReport, renderInset, renderPickerBase, defaultInset, insetExtent, parseCsv, tableNumber, cleanTable,
-  derivedNumbers, defaultTexts, TEXT_EXAMPLES, blankTable, tableHasData, featureAt, popupFields, defaultPopupFields, loadPopup, PAGES, INSETS } from "./report.js?v=20261016185040";
-import { DEFAULTS, layerKey, defaultOrder } from "./renderer.js?v=20261016185040";
+  derivedNumbers, defaultTexts, TEXT_EXAMPLES, blankTable, tableHasData, featureAt, popupFields, defaultPopupFields, loadPopup, PAGES, INSETS } from "./report.js?v=20261016185054";
+import { DEFAULTS, layerKey, defaultOrder } from "./renderer.js?v=20261016185054";
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
@@ -567,6 +567,8 @@ async function showPdf(bytes) {
 export function initReportTab(c) {
   ctx = c;
   $("rload").onclick = loadData;
+  $("rfind").onclick = () => ctx.searchMaps($("rsearch").value.trim()).catch((e) => log(`Error: ${e.message}`));
+  $("rsearch").onkeydown = (e) => { if (e.key === "Enter") $("rfind").click(); };
   $("rfiles").onchange = async () => {
     if (!S) return;
     const n = await readTableFiles([...$("rfiles").files]);
