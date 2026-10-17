@@ -1,7 +1,7 @@
-import { CONFIG } from "./config.js?v=20261017114629";
-import { buildReport, resolveLayers, layerKey, defaultOrder, ALL_KEY, DEFAULTS } from "./renderer.js?v=20261017114629";
-import { initReportTab, setReportMaps } from "./report-ui.js?v=20261017114629";
-import { initCompletenessTab, setCompletenessMaps } from "./completeness.js?v=20261017114629";
+import { CONFIG } from "./config.js?v=20261017115446";
+import { buildReport, resolveLayers, layerKey, defaultOrder, ALL_KEY, DEFAULTS } from "./renderer.js?v=20261017115446";
+import { initReportTab, setReportMaps } from "./report-ui.js?v=20261017115446";
+import { initCompletenessTab, setCompletenessMaps } from "./completeness.js?v=20261017115446";
 
 const $ = (id) => document.getElementById(id);
 const SHARING = `${CONFIG.portal}/sharing/rest`;
@@ -192,7 +192,7 @@ async function init() {
   $("tabs").hidden = false;
   document.querySelectorAll("#tabs button").forEach((b) => b.onclick = () => {
     document.querySelectorAll("#tabs button").forEach((x) => { x.setAttribute("aria-selected", String(x === b)); $(x.dataset.tab).hidden = x !== b; });
-    document.body.classList.toggle("wide", b.dataset.tab === "tab-report");
+    document.body.classList.toggle("wide", b.dataset.tab === "tab-report" || b.dataset.tab === "tab-complete");
   });
   // the Full report tab must never stop the Map PDFs tab from working
   try { initReportTab({ fetchJson, fetchImage, SHARING, createCanvas, loadImage, blobBytes, searchMaps }); } catch (e) { console.error("Full report tab:", e); }

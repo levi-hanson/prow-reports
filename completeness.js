@@ -5,7 +5,7 @@
 //
 // Core functions are environment-agnostic (deps: fetchJson, jsPDF, reportFonts, assets) for Node testing.
 
-import { resolveLayers } from "./renderer.js?v=20261017114629";
+import { resolveLayers } from "./renderer.js?v=20261017115446";
 
 export const CHECKS = [
   { key: "dcs", label: "DCS scores reported", field: /^DCS_SCORE$/i },
@@ -233,6 +233,39 @@ function log(msg, progress) {
   else { const d = document.createElement("div"); d.textContent = msg; if (progress) d.dataset.progress = "1"; el.appendChild(d); }
   el.scrollTop = el.scrollHeight;
 }
+// ---- live certificate preview (right-hand pane): rebuilt a moment after any edit, drawn with pdf.js
+let pdfjsReady = null, prevTimer = null, drawing = false, again = false;
+function loadPdfJs() {
+  if (pdfjsReady) return pdfjsReady;
+  pdfjsReady = new Promise((res, rej) => {
+    if (window.pdfjsLib) { res(window.pdfjsLib); return; }
+    const s = document.createElement("script");
+    s.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+    s.onload = () => { window.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"; res(window.pdfjsLib); };
+    s.onerror = () => { pdfjsReady = null; rej(new Error("Couldn't load the PDF viewer.")); };
+    document.head.appendChild(s);
+  });
+  return pdfjsReady;
+}
+const certOpts = () => ({ client: $("cclient").value.trim(), issuedBy: $("cissuer").value.trim() || "Daxbot", notes, threshold: threshold() });
+const schedulePreview = () => { if (!last) return; clearTimeout(prevTimer); prevTimer = setTimeout(previewCert, 400); };
+async function previewCert() {
+  if (!last) return;
+  if (drawing) { again = true; return; }
+  drawing = true;
+  try {
+    const bytes = new Uint8Array(buildCertificate(await certDeps(), last, certOpts()));
+    const lib = await loadPdfJs(), view = $("cview"), doc = await lib.getDocument({ data: bytes }).promise, page = await doc.getPage(1);
+    const width = Math.max(200, view.clientWidth - 24), dpr = Math.min(window.devicePixelRatio || 1, 2), v1 = page.getViewport({ scale: 1 }), vp = page.getViewport({ scale: (width * dpr) / v1.width });
+    const c = document.createElement("canvas"); c.width = vp.width; c.height = vp.height; c.className = "ppage";
+    await page.render({ canvasContext: c.getContext("2d"), viewport: vp }).promise;
+    view.innerHTML = ""; view.appendChild(c); doc.destroy();
+    $("cdl").disabled = false;
+    $("cpstatus").textContent = `Up to date · ${new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", second: "2-digit" })}`;
+  } catch (e) { $("cpstatus").textContent = `Preview error: ${e.message}`; }
+  drawing = false;
+  if (again) { again = false; previewCert(); }
+}
 const download = (blob, name) => { const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 60000); };
 const safe = (s) => String(s).replace(/[^A-Za-z0-9_-]+/g, "_");
 
@@ -262,17 +295,19 @@ function renderNotes() {
     notes[ta.dataset.l] = ta.value; store.set(`cnotes:${lastId}`, notes);
     // renumber without redrawing (keeps the cursor in the box)
     let k = 0; $("cnotes").querySelectorAll(".cnote").forEach((d) => { const on = !!d.querySelector("textarea").value.trim(); d.classList.toggle("on", on); d.querySelector(".cref").textContent = on ? ++k : "—"; });
+    schedulePreview();
   });
-  $("cthresh2").onchange = () => { $("cthresh").value = $("cthresh2").value; store.set("cthresh", threshold()); renderNotes(); };
+  $("cthresh2").onchange = () => { $("cthresh").value = $("cthresh2").value; store.set("cthresh", threshold()); renderNotes(); schedulePreview(); };
 }
 async function run() {
   const id = $("cmap").value; if (!id) return;
   $("crun").disabled = true; $("clog").innerHTML = ""; $("cresults").innerHTML = ""; $("cactions").hidden = true;
+  $("cdl").disabled = true; $("cview").innerHTML = '<p class="pempty">Checking the map…</p>'; $("cpstatus").textContent = "Certificate preview"; loadPdfJs().catch(() => {});
   try {
     last = await checkMap({ fetchJson: ctx.fetchJson }, ctx.SHARING, id, log);
     lastId = id; notes = store.get(`cnotes:${id}`) || {};
     if (!$("cclient").value.trim()) $("cclient").value = last.title.replace(/\s*Results Map\s*$/i, "").trim();
-    log("Done."); renderResults();
+    log("Done."); renderResults(); previewCert();
   } catch (e) { log(`Error: ${e.message}`); }
   $("crun").disabled = false;
 }
@@ -282,10 +317,12 @@ export function initCompletenessTab(c) {
   $("csearch").onkeydown = (e) => { if (e.key === "Enter") $("cfind").click(); };
   $("crun").onclick = run;
   const th = store.get("cthresh"); if (th) $("cthresh").value = th;
-  $("ccert").onclick = async () => {
-    try { const pdf = buildCertificate(await certDeps(), last, { client: $("cclient").value.trim(), issuedBy: $("cissuer").value.trim() || "Daxbot", notes, threshold: threshold() }); download(new Blob([pdf], { type: "application/pdf" }), `${safe($("cclient").value || last.title)}_Certificate_of_Completeness.pdf`); }
+  $("ccert").onclick = $("cdl").onclick = async () => {
+    if (!last) return;
+    try { const pdf = buildCertificate(await certDeps(), last, certOpts()); download(new Blob([pdf], { type: "application/pdf" }), `${safe($("cclient").value || last.title)}_Certificate_of_Completeness.pdf`); }
     catch (e) { log(`Error: ${e.message}`); }
   };
+  $("cclient").oninput = schedulePreview; $("cissuer").oninput = schedulePreview;
   $("ccsv").onclick = async () => {
     $("ccsv").disabled = true;
     try { const rows = await missingRows({ fetchJson: ctx.fetchJson }, last, log); log(`Missing list: ${rows.length.toLocaleString()} features.`); download(new Blob([toCsv(rows)], { type: "text/csv" }), `${safe(last.title)}_missing_items.csv`); }

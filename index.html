@@ -240,6 +240,8 @@ table.ctable td:not(:first-child),table.ctable th:not(:first-child){text-align:c
   </div>
 
   <div id="tab-complete" class="tabpane" hidden>
+   <div id="csplit" class="rsplit has-preview">
+   <div class="rleft">
     <section class="card">
       <p class="muted">Checks every feature in a results map for a DCS score, a PROWAG compliance answer and an attached image, and issues a Certificate of Completeness.</p>
       <label for="csearch">1. Find the results map</label>
@@ -260,6 +262,12 @@ table.ctable td:not(:first-child),table.ctable th:not(:first-child){text-align:c
         <p style="margin-top:14px"><button id="ccert">Download certificate (PDF)</button> <button id="ccsv" class="secondary">Download missing items (CSV)</button></p>
       </div>
     </section>
+   </div>
+   <aside id="cpreview" class="rright card" aria-label="Certificate preview">
+     <div class="pbar"><span id="cpstatus" class="muted">Certificate preview</span><button id="cdl" class="btn small" disabled>Download PDF</button></div>
+     <div id="cview" class="pview"><p class="pempty">Run the checks — the certificate appears here and updates as you edit the name and notes.</p></div>
+   </aside>
+   </div>
   </div>
 
   <section class="card">
@@ -275,6 +283,6 @@ table.ctable td:not(:first-child),table.ctable th:not(:first-child){text-align:c
 </main>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script type="module" src="app.js?v=20261017114629"></script>
+<script type="module" src="app.js?v=20261017115446"></script>
 </body>
 </html>
