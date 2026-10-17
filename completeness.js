@@ -5,7 +5,7 @@
 //
 // Core functions are environment-agnostic (deps: fetchJson, jsPDF, reportFonts, assets) for Node testing.
 
-import { resolveLayers } from "./renderer.js?v=20261017111153";
+import { resolveLayers } from "./renderer.js?v=20261017111834";
 
 export const CHECKS = [
   { key: "dcs", label: "DCS scores reported", field: /^DCS_SCORE$/i },
@@ -74,8 +74,19 @@ export function pct(present, total) {
 }
 const fmtPct = (p) => (p === null ? "—" : `${p.toFixed(1)}%`);
 
+// features with nothing missing on any check that applies to them (a feature missing two things counts once)
+export function completeCount(L) {
+  const bad = new Set();
+  for (const c of CHECKS) { const k = L.checks[c.key]; if (k && k.applies) for (const o of k.missing) bad.add(o); }
+  return L.total - bad.size;
+}
+export const COMPLETE_LABEL = "Features fully complete";
+
 export function summary(res) {
   const s = {};
+  let cp = 0, ct = 0;
+  for (const L of res.layers) { cp += completeCount(L); ct += L.total; }
+  s.complete = { present: cp, total: ct, pct: pct(cp, ct) };
   for (const c of CHECKS) {
     let present = 0, total = 0;
     for (const L of res.layers) { const k = L.checks[c.key]; if (k && k.applies) { present += k.present; total += L.total; } }
@@ -129,27 +140,31 @@ export function buildCertificate(deps, res, { client, issuedBy = "Daxbot", date 
   doc.setFont("Pop", "normal"); doc.setFontSize(11); doc.setTextColor(...BODY);
   const lines = doc.splitTextToSize(sentence, W - 2 * M); doc.text(lines, M, y, { baseline: "alphabetic", lineHeightFactor: 1.45 }); y += lines.length * 16 + 22;
   // headline figures
-  const boxes = CHECKS.map((c) => [c.label, s[c.key]]), bw = (W - 2 * M - 24) / 3;
+  const SHORT = { dcs: "DCS scores reported", prowag: "PROWAG reported", images: "Images attached" };
+  const boxes = [["Fully complete", s.complete], ...CHECKS.map((c) => [SHORT[c.key], s[c.key]])], bw = (W - 2 * M - 36) / 4;
   boxes.forEach(([label, v], i) => {
     const x = M + i * (bw + 12);
-    doc.setFillColor(...TINT); doc.setDrawColor(...TEAL); doc.setLineWidth(0.8); doc.roundedRect(x, y, bw, 78, 6, 6, "FD");
-    T(fmtPct(v.pct), x + bw / 2, y + 40, "MontB", 26, NAVY, { align: "center" });
-    T(label, x + bw / 2, y + 58, "PopM", 9, BODY, { align: "center" });
-    T(v.total ? `${v.present.toLocaleString()} of ${v.total.toLocaleString()}` : "not applicable", x + bw / 2, y + 70, "PopL", 7.5, BODY, { align: "center" });
+    if (i === 0) { doc.setFillColor(...NAVY); doc.setDrawColor(...NAVY); } else { doc.setFillColor(...TINT); doc.setDrawColor(...TEAL); }
+    doc.setLineWidth(0.8); doc.roundedRect(x, y, bw, 78, 6, 6, "FD");
+    const fg = i === 0 ? [255, 255, 255] : NAVY, sub = i === 0 ? [220, 232, 236] : BODY;
+    T(fmtPct(v.pct), x + bw / 2, y + 38, "MontB", 22, fg, { align: "center" });
+    T(label, x + bw / 2, y + 56, "PopM", 8.5, sub, { align: "center" });
+    T(v.total ? `${v.present.toLocaleString()} of ${v.total.toLocaleString()}` : "not applicable", x + bw / 2, y + 71, "PopL", 7, sub, { align: "center" });
   });
   y += 104;
   // per-layer table
-  const cols = [M, M + 210, M + 290, M + 362, M + 434], cw = [210, 80, 72, 72, W - M - (M + 434)];
-  const head = ["Layer", "Features", "DCS", "PROWAG", "Images"];
+  const cw = [168, 68, 67, 67, 67, W - 2 * M - 168 - 68 - 67 * 3], cols = cw.reduce((a, w) => (a.push(a[a.length - 1] + w), a), [M]).slice(0, 6);
+  const head = ["Layer", "Features", "DCS", "PROWAG", "Images", "Complete"];
   doc.setFillColor(...NAVY); doc.rect(M, y, W - 2 * M, 24, "F");
   head.forEach((h, i) => T(h, i ? cols[i] + cw[i] / 2 : cols[0] + 8, y + 16, "MontSB", 9.5, [255, 255, 255], i ? { align: "center" } : {}));
   y += 24;
   const rowH = 21, maxRows = Math.floor((H - 150 - y) / rowH);
   res.layers.slice(0, maxRows).forEach((L, r) => {
     if (r % 2) { doc.setFillColor(...TINT); doc.rect(M, y, W - 2 * M, rowH, "F"); }
-    T(L.title.length > 34 ? `${L.title.slice(0, 33)}…` : L.title, cols[0] + 8, y + 14, "Pop", 9, BODY);
+    T(L.title.length > 28 ? `${L.title.slice(0, 27)}…` : L.title, cols[0] + 8, y + 14, "Pop", 9, BODY);
     T(L.total.toLocaleString(), cols[1] + cw[1] / 2, y + 14, "PopM", 9, BODY, { align: "center" });
     ["dcs", "prowag", "images"].forEach((k, i) => { const c = L.checks[k]; T(c && c.applies ? fmtPct(pct(c.present, L.total)) : "—", cols[i + 2] + cw[i + 2] / 2, y + 14, "PopM", 9, BODY, { align: "center" }); });
+    T(fmtPct(pct(completeCount(L), L.total)), cols[5] + cw[5] / 2, y + 14, "PopSB", 9, NAVY, { align: "center" });
     y += rowH;
   });
   doc.setDrawColor(...TEAL); doc.setLineWidth(0.6); doc.line(M, y, W - M, y);
@@ -158,7 +173,7 @@ export function buildCertificate(deps, res, { client, issuedBy = "Daxbot", date 
   const fy = H - 132;
   T("Method", M, fy, "MontSB", 9.5, HEAD);
   doc.setFont("PopL", "normal"); doc.setFontSize(8); doc.setTextColor(...BODY);
-  doc.text(doc.splitTextToSize("Percentages are features with a value present divided by all features in the layer, checked directly against the ArcGIS feature services. A dash means the check does not apply to that layer. Figures are rounded down, so 100% means nothing is missing.", 300), M, fy + 14, { lineHeightFactor: 1.4 });
+  doc.text(doc.splitTextToSize("Percentages are features with a value present divided by all features in the layer, checked directly against the ArcGIS feature services. \"Fully complete\" counts features missing nothing that applies to them; a feature missing two things counts once. A dash means the check does not apply. Figures are rounded down, so 100% means nothing is missing.", 300), M, fy + 14, { lineHeightFactor: 1.4 });
   doc.setDrawColor(...HEAD); doc.setLineWidth(0.6); doc.line(W - M - 190, fy + 30, W - M, fy + 30);
   T(issuedBy, W - M - 190, fy + 44, "PopM", 9, HEAD);
   T(`Issued ${issued}`, W - M - 190, fy + 57, "PopL", 8, BODY);
@@ -195,9 +210,10 @@ const safe = (s) => String(s).replace(/[^A-Za-z0-9_-]+/g, "_");
 
 function renderResults() {
   const s = summary(last), cell = (c, total) => (c && c.applies ? `${fmtPct(pct(c.present, total))}<span class="muted small"> · ${(total - c.present).toLocaleString()} missing</span>` : '<span class="muted">—</span>');
-  $("cresults").innerHTML = `<div class="cbig">${CHECKS.map((c) => `<div><b>${fmtPct(s[c.key].pct)}</b><span>${c.label}</span><span class="muted small">${s[c.key].total ? `${s[c.key].present.toLocaleString()} of ${s[c.key].total.toLocaleString()}` : "not applicable"}</span></div>`).join("")}</div>
-    <div class="scroll"><table class="grid ctable"><tr><th>Layer</th><th>Features</th>${CHECKS.map((c) => `<th>${c.label}</th>`).join("")}</tr>
-    ${last.layers.map((L) => `<tr><td>${esc(L.title)}</td><td>${L.total.toLocaleString()}</td>${CHECKS.map((c) => `<td>${cell(L.checks[c.key], L.total)}</td>`).join("")}</tr>`).join("")}</table></div>
+  const big = [["complete", COMPLETE_LABEL, true], ...CHECKS.map((c) => [c.key, c.label, false])];
+  $("cresults").innerHTML = `<div class="cbig">${big.map(([k, label, main]) => `<div class="${main ? "main" : ""}"><b>${fmtPct(s[k].pct)}</b><span>${label}</span><span class="muted small">${s[k].total ? `${s[k].present.toLocaleString()} of ${s[k].total.toLocaleString()}` : "not applicable"}</span></div>`).join("")}</div>
+    <div class="scroll"><table class="grid ctable"><tr><th>Layer</th><th>Features</th>${CHECKS.map((c) => `<th>${c.label}</th>`).join("")}<th>${COMPLETE_LABEL}</th></tr>
+    ${last.layers.map((L) => { const cc = completeCount(L); return `<tr><td>${esc(L.title)}</td><td>${L.total.toLocaleString()}</td>${CHECKS.map((c) => `<td>${cell(L.checks[c.key], L.total)}</td>`).join("")}<td><b>${fmtPct(pct(cc, L.total))}</b><span class="muted small"> · ${(L.total - cc).toLocaleString()} incomplete</span></td></tr>`; }).join("")}</table></div>
     <p class="muted small">Checked ${last.checkedAt.toLocaleString("en-US")}. Rounded down, so 100% means nothing is missing. A dash means the layer has no such field (or doesn't store images).</p>`;
   $("cactions").hidden = false;
 }
