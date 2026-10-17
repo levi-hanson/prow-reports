@@ -92,7 +92,7 @@ figure.example{margin:10px 0 0;max-width:300px}
 body.wide main{max-width:1680px}
 .rright{padding:10px;display:flex;flex-direction:column;margin-top:20px}
 .pbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding-bottom:8px;border-bottom:1px solid var(--line)}
-.pbar #rpstatus,.pbar #cpstatus{flex:1 1 160px;font-size:12px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pbar #rpstatus,.pbar #cpstatus,.pbar #mpstatus{flex:1 1 160px;font-size:12px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .pbar .chk.inline{display:inline-flex;align-items:center;margin:0;font-size:13px}
 .btn.small,button.small{padding:5px 11px;font-size:13px}
 .btn.disabled{opacity:.45}
@@ -152,6 +152,8 @@ table.ctable td:not(:first-child),table.ctable th:not(:first-child){text-align:c
     <button role="tab" data-tab="tab-maps" aria-selected="false">Map PDFs</button>
   </nav>
   <div id="tab-maps" class="tabpane">
+   <div id="msplit" class="rsplit has-preview">
+   <div class="rleft">
   <section id="app" class="card" hidden>
     <p class="muted">Makes the print-ready map PDFs for a results map: one map of everything plus one map per layer, ready for InDesign.</p>
     <label for="search">1. Find the results map</label>
@@ -174,12 +176,23 @@ table.ctable td:not(:first-child),table.ctable th:not(:first-child){text-align:c
   </section>
   <section class="card">
     <label>4. Make the PDFs</label>
-    <button id="go" disabled>Generate PDFs</button>
-    <p class="muted">Takes a few minutes for a large city — keep this tab open. A zip downloads when it's done.</p>
+    <button id="go" disabled>Refresh preview</button>
+    <p class="muted">The preview on the right redraws a moment after every change while <b>Live</b> is on. The first build downloads the layers (a minute or so for a large city); after that it's quicker. Download from the preview: a zip of every PDF, or the PDF itself when there's only one.</p>
     <div id="log"></div>
-    <div id="result"></div>
   </section>
   </div>
+   </div>
+   <aside id="mpreview" class="rright card" aria-label="Map PDF preview">
+     <div class="pbar">
+       <span id="mpstatus" class="muted">Preview</span>
+       <label class="chk inline"><input type="checkbox" id="mlive" checked> Live</label>
+       <a id="mdl" class="btn small disabled" href="#">Download PDFs</a>
+       <button id="mclose" class="secondary small" aria-label="Close preview">×</button>
+     </div>
+     <select id="mpick" aria-label="Which PDF to preview" hidden style="margin-top:8px"></select>
+     <div id="mview" class="pview"><p class="pempty">Pick a results map and click <b>Load map</b> — the map PDFs appear here.</p></div>
+   </aside>
+   </div>
   </div>
 
   <div id="tab-report" class="tabpane" hidden>
@@ -296,6 +309,6 @@ table.ctable td:not(:first-child),table.ctable th:not(:first-child){text-align:c
 </main>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script type="module" src="app.js?v=20261017121221"></script>
+<script type="module" src="app.js?v=20261017121544"></script>
 </body>
 </html>

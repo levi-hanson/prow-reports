@@ -1,7 +1,7 @@
-import { CONFIG } from "./config.js?v=20261017121221";
-import { buildReport, resolveLayers, layerKey, defaultOrder, ALL_KEY, DEFAULTS } from "./renderer.js?v=20261017121221";
-import { initReportTab, setReportMaps } from "./report-ui.js?v=20261017121221";
-import { initCompletenessTab, setCompletenessMaps } from "./completeness.js?v=20261017121221";
+import { CONFIG } from "./config.js?v=20261017121544";
+import { buildReport, resolveLayers, layerKey, defaultOrder, ALL_KEY, DEFAULTS } from "./renderer.js?v=20261017121544";
+import { initReportTab, setReportMaps } from "./report-ui.js?v=20261017121544";
+import { initCompletenessTab, setCompletenessMaps } from "./completeness.js?v=20261017121544";
 
 const $ = (id) => document.getElementById(id);
 const SHARING = `${CONFIG.portal}/sharing/rest`;
@@ -118,21 +118,21 @@ function drawTable() {
       <td><input type="checkbox" class="use" data-key="${esc(layerKey(l))}" ${off.includes(layerKey(l)) ? "" : "checked"} aria-label="Generate ${esc(l.title)} map"></td>
       <td>${esc(l.title)}</td>${isPoint(l) ? `<td>${cell(l.title, "overview")}</td><td>${cell(l.title, "solo")}</td>` : '<td class="muted">—</td><td class="muted">—</td>'}</tr>`).join("")}</table>
     <p class="muted">Top of the list is drawn on top and comes first in the legend. Icon sizes are in points; blank = automatic size from the web map. <a href="#" id="iconreset">Reset to defaults</a></p>`;
-  box.querySelectorAll("input[data-k]").forEach((i) => i.oninput = saveIcons);
-  box.querySelectorAll("input.use").forEach((c) => c.onchange = () => { local.set(`off:${id}`, skipped()); updateGo(); });
+  box.querySelectorAll("input[data-k]").forEach((i) => i.oninput = () => { saveIcons(); scheduleMaps(); });
+  box.querySelectorAll("input.use").forEach((c) => c.onchange = () => { local.set(`off:${id}`, skipped()); updateGo(); scheduleMaps(); });
   updateGo();
   box.querySelectorAll("[data-mv]").forEach((b) => b.onclick = () => {
     const i = +b.dataset.mv, j = i + +b.dataset.d; [mapLayers[i], mapLayers[j]] = [mapLayers[j], mapLayers[i]];
-    local.set(`order:${id}`, mapLayers.map(layerKey)); drawTable();
+    local.set(`order:${id}`, mapLayers.map(layerKey)); drawTable(); scheduleMaps();
     box.querySelector(`[data-mv="${j}"][data-d="${b.dataset.d}"]`)?.focus();
   });
-  $("iconreset").onclick = (e) => { e.preventDefault(); try { localStorage.removeItem(`icons:${id}`); localStorage.removeItem(`order:${id}`); localStorage.removeItem(`off:${id}`); } catch {} box.innerHTML = ""; loadIcons(); };
+  $("iconreset").onclick = (e) => { e.preventDefault(); try { localStorage.removeItem(`icons:${id}`); localStorage.removeItem(`order:${id}`); localStorage.removeItem(`off:${id}`); } catch {} box.innerHTML = ""; loadIcons().then(scheduleMaps); };
 }
 const skipped = () => [...$("icons").querySelectorAll("input.use")].filter((c) => !c.checked).map((c) => c.dataset.key);
 function updateGo() {
   const boxes = $("icons").querySelectorAll("input.use"), on = [...boxes].filter((c) => c.checked).length;
   $("go").disabled = !$("map").value || (boxes.length > 0 && !on);
-  $("go").textContent = !boxes.length || on === boxes.length ? "Generate PDFs" : on === 1 ? "Generate 1 PDF" : `Generate ${on} PDFs`;
+  $("go").textContent = !boxes.length ? "Refresh preview" : `Refresh preview (${on} PDF${on === 1 ? "" : "s"})`;
 }
 function readIcons() {
   const out = {};
@@ -153,32 +153,69 @@ function iconOverrides() {
   return res;
 }
 
-async function generate() {
+// ---------------------------------------------------------------- preview (right-hand pane, live) — same pattern as the other tabs
+// Downloads and basemaps are cached per map, so a change only re-renders the PDFs.
+let mcache = null, mres = null, mbuilding = false, mpending = false, mtimer = null, mzipUrl = null, pdfjsReady = null;
+function loadPdfJs() {
+  if (pdfjsReady) return pdfjsReady;
+  pdfjsReady = new Promise((res, rej) => {
+    if (window.pdfjsLib) { res(window.pdfjsLib); return; }
+    const s = document.createElement("script");
+    s.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+    s.onload = () => { window.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"; res(window.pdfjsLib); };
+    s.onerror = () => { pdfjsReady = null; rej(new Error("Couldn't load the PDF viewer.")); };
+    document.head.appendChild(s);
+  });
+  return pdfjsReady;
+}
+const mstatus = (s) => { $("mpstatus").textContent = s; };
+function showMapPane(on) { $("mpreview").hidden = !on; $("msplit").classList.toggle("has-preview", on); }
+function scheduleMaps() {
+  if (!$("mlive").checked || $("mpreview").hidden || $("msteps").hidden) return;
+  clearTimeout(mtimer); mtimer = setTimeout(buildMaps, 800);
+}
+async function buildMaps() {
   const id = $("map").value; if (!id) return;
-  $("go").disabled = true; $("log").innerHTML = ""; $("result").innerHTML = "";
+  if (mbuilding) { mpending = true; return; }
+  mbuilding = true; mpending = false; showMapPane(true); mstatus("Updating…");
+  if (!mcache || mcache.id !== id) mcache = { id, features: new Map(), base: new Map() };
   try {
     const deps = { fetchJson, createCanvas, loadImage, jsPDF: window.jspdf.jsPDF, fonts: await fonts(),
       toJpeg: (cv, q) => blobBytes(cv, "image/jpeg", q), toPng: (cv) => blobBytes(cv, "image/png") };
-    const options = { page: $("page").value, basemap: $("basemap").value, date: $("date").value.trim() || null, iconOverrides: iconOverrides(), layerOrder: mapLayers.length ? mapLayers.map(layerKey) : null, skipLayers: skipped() };
-    const res = await buildReport(deps, { sharing: SHARING, webmapId: id, options, onStatus: log });
-    const used = pointLayers.map((t) => {
-      const a = res.usedPt[`${t}|false`], b = res.usedPt[`${t}|true`];
-      return a || b ? `${t}: ${a ? a.toFixed(1) : "–"} / ${b ? b.toFixed(1) : "–"}` : null;
-    }).filter(Boolean);
+    const options = { page: $("page").value, basemap: $("basemap").value, date: $("date").value.trim() || null, iconOverrides: iconOverrides(),
+      layerOrder: mapLayers.length ? mapLayers.map(layerKey) : null, skipLayers: skipped(), cache: mcache };
+    const res = await buildReport(deps, { sharing: SHARING, webmapId: id, options, onStatus: (s, prog) => { mstatus(`Updating… ${s}`); if (!prog) log(s); } });
+    if ($("map").value !== id) throw new Error("map changed");
+    const used = pointLayers.map((t) => { const a = res.usedPt[`${t}|false`], b = res.usedPt[`${t}|true`]; return a || b ? `${t}: ${a ? a.toFixed(1) : "–"} / ${b ? b.toFixed(1) : "–"}` : null; }).filter(Boolean);
     if (used.length) log(`Icon sizes used, pt (all-layers map / own map): ${used.join(" · ")}`);
-    const one = res.files.length === 1;
+    mres = res;
+    // which PDF to show: keep the current choice if it still exists
+    const pick = $("mpick"), keep = pick.value;
+    pick.innerHTML = res.files.map((f, i) => `<option value="${esc(f.name)}">${esc(i === 0 && /_ALL\.pdf$/.test(f.name) ? "All layers" : f.name.replace(/^.*?__/, "").replace(/\.pdf$/, "").replace(/_/g, " "))}</option>`).join("");
+    if (res.files.some((f) => f.name === keep)) pick.value = keep;
+    pick.hidden = res.files.length < 2;
+    // download: the PDF itself when there's one, else a zip of all of them
+    if (mzipUrl) URL.revokeObjectURL(mzipUrl);
     let blob, name;
-    if (one) { blob = new Blob([res.files[0].data], { type: "application/pdf" }); name = res.files[0].name; }
-    else {
-      log("Zipping…");
-      const zip = new JSZip(); for (const f of res.files) zip.file(f.name, f.data);
-      blob = await zip.generateAsync({ type: "blob" }); name = `${res.title.replace(/[^A-Za-z0-9_-]/g, "_")}_PDFs.zip`;
-    }
-    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name;
-    a.textContent = `Download ${one ? "PDF" : `${res.files.length} PDFs`} (${(blob.size / 1048576).toFixed(1)} MB)`; a.className = "btn";
-    $("result").appendChild(a); a.click();
-  } catch (e) { log(`Error: ${e.message}`); }
-  updateGo();
+    if (res.files.length === 1) { blob = new Blob([res.files[0].data], { type: "application/pdf" }); name = res.files[0].name; }
+    else { const zip = new JSZip(); for (const f of res.files) zip.file(f.name, f.data); blob = await zip.generateAsync({ type: "blob" }); name = `${res.title.replace(/[^A-Za-z0-9_-]/g, "_")}_PDFs.zip`; }
+    mzipUrl = URL.createObjectURL(blob);
+    $("mdl").href = mzipUrl; $("mdl").download = name; $("mdl").classList.remove("disabled");
+    $("mdl").textContent = res.files.length === 1 ? `Download PDF (${(blob.size / 1048576).toFixed(1)} MB)` : `Download ${res.files.length} PDFs (${(blob.size / 1048576).toFixed(1)} MB)`;
+    await showMapPdf();
+    mstatus(`Up to date · ${new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", second: "2-digit" })}`);
+  } catch (e) { if (e.message !== "map changed") { mstatus(`Error: ${e.message}`); log(`Error: ${e.message}`); } }
+  mbuilding = false; updateGo();
+  if (mpending) buildMaps();
+}
+async function showMapPdf() {
+  if (!mres) return;
+  const f = mres.files.find((x) => x.name === $("mpick").value) || mres.files[0];
+  const lib = await loadPdfJs(), view = $("mview"), doc = await lib.getDocument({ data: new Uint8Array(f.data).slice() }).promise, page = await doc.getPage(1);
+  const width = Math.max(200, view.clientWidth - 24), dpr = Math.min(window.devicePixelRatio || 1, 2), v1 = page.getViewport({ scale: 1 }), vp = page.getViewport({ scale: (width * dpr) / v1.width });
+  const c = document.createElement("canvas"); c.width = vp.width; c.height = vp.height; c.className = "ppage";
+  await page.render({ canvasContext: c.getContext("2d"), viewport: vp }).promise;
+  view.innerHTML = ""; view.appendChild(c); doc.destroy();
 }
 
 async function init() {
@@ -191,7 +228,7 @@ async function init() {
   $("tabs").hidden = false;
   document.querySelectorAll("#tabs button").forEach((b) => b.onclick = () => {
     document.querySelectorAll("#tabs button").forEach((x) => { x.setAttribute("aria-selected", String(x === b)); $(x.dataset.tab).hidden = x !== b; });
-    document.body.classList.toggle("wide", b.dataset.tab === "tab-report" || b.dataset.tab === "tab-complete");
+    document.body.classList.add("wide");   // every tab is split-screen now
   });
   // the Full report tab must never stop the Map PDFs tab from working
   try { initReportTab({ fetchJson, fetchImage, SHARING, createCanvas, loadImage, blobBytes, searchMaps }); } catch (e) { console.error("Full report tab:", e); }
@@ -206,8 +243,19 @@ $("signin").onclick = signIn;
 $("signout").onclick = () => { store.del("auth"); location.reload(); };
 $("find").onclick = () => searchMaps().catch((e) => log(`Error: ${e.message}`));
 $("search").onkeydown = (e) => { if (e.key === "Enter") $("find").click(); };
-$("go").onclick = generate;
+$("go").onclick = () => { showMapPane(true); buildMaps(); };
+$("mlive").onchange = () => { if ($("mlive").checked) buildMaps(); };
+$("mclose").onclick = () => showMapPane(false);
+$("mpick").onchange = () => showMapPdf().catch((e) => mstatus(`Error: ${e.message}`));
+$("mdl").onclick = (e) => { if ($("mdl").classList.contains("disabled")) e.preventDefault(); };
+for (const id of ["page", "basemap"]) $(id).onchange = scheduleMaps;
+$("date").oninput = scheduleMaps;
 // steps 2–4 appear once a map is loaded (same pattern as the other tabs); picking another map hides them again
-$("mload").onclick = async () => { $("msteps").hidden = false; await loadIcons(); };
+$("mload").onclick = async () => {
+  $("msteps").hidden = false; showMapPane(true); mres = null; $("mpick").hidden = true; $("mdl").classList.add("disabled");
+  $("mview").innerHTML = '<p class="pempty">Loading map data…</p>'; loadPdfJs().catch(() => {});
+  await loadIcons();
+  if ($("mlive").checked) buildMaps(); else $("mview").innerHTML = '<p class="pempty">Live preview is off — tick <b>Live</b> or click <b>Refresh preview</b>.</p>';
+};
 $("map").onchange = () => { $("msteps").hidden = true; };
 init();

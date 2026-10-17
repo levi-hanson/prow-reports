@@ -525,9 +525,13 @@ export async function buildReport(deps, { sharing, webmapId, options = {}, onSta
     layers.sort((a, b) => rank(a) - rank(b));
   }
   onStatus(`Layers: ${layers.map((l) => l.title).join(", ")}`);
+  // cfg.cache = { features: Map, base: Map } keeps downloads and basemaps between runs (live preview)
+  const cache = cfg.cache || null;
   for (const L of layers) {
+    if (cache && cache.features.has(L.url)) { L.features = cache.features.get(L.url); continue; }
     const { features, expected } = await fetchFeatures(deps, L, (d, n) => onStatus(`Downloading ${L.title}: ${d.toLocaleString()} / ${n.toLocaleString()}`, true));
     L.features = features;
+    if (cache) cache.features.set(L.url, features);
     onStatus(`${L.title}: ${features.length.toLocaleString()} features${features.length < expected ? ` (of ${expected.toLocaleString()} — some have no shape)` : ""}`);
   }
   const drawable = layers.filter((L) => L.features.length);
@@ -535,7 +539,9 @@ export async function buildReport(deps, { sharing, webmapId, options = {}, onSta
   const ext = combinedExtent(drawable, cfg.page);
   const [pw, ph] = PAGE_SIZES[cfg.page] || PAGE_SIZES.letter;
   const W = Math.round(pw * AX.W * cfg.dpi), H = Math.round(ph * AX.H * cfg.dpi);
-  const base = await renderBasemap(deps, cfg, ext, W, H, onStatus);
+  const bkey = `${cfg.basemap}|${ext.x0}|${ext.y0}|${ext.x1}|${ext.y1}|${W}x${H}`;
+  const base = cache && cache.base.has(bkey) ? cache.base.get(bkey) : await renderBasemap(deps, cfg, ext, W, H, onStatus);
+  if (cache) cache.base.set(bkey, base);
   const dateStr = cfg.date || new Date().toLocaleDateString("en-US", { month: "2-digit", day: "2-digit", year: "numeric" });
   const files = [], st = safeName(title);
   if (makeAll) {
