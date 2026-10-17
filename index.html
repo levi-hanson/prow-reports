@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PROW Map PDFs</title>
+<style>
+:root{--bg:#f6f7f8;--panel:#fff;--text:#1c2226;--muted:#5d6b73;--line:#d9e0e4;--accent:#0b6e8a;--warn:#b54708}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#111619;--panel:#182126;--text:#e6eef1;--muted:#93a4ac;--line:#2a363d;--accent:#5fb7cf;--warn:#f0a35e}}
+:root[data-theme="dark"]{--bg:#111619;--panel:#182126;--text:#e6eef1;--muted:#93a4ac;--line:#2a363d;--accent:#5fb7cf;--warn:#f0a35e}
+*{box-sizing:border-box}
+[hidden]{display:none !important}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 system-ui,-apple-system,Segoe UI,sans-serif}
+main{max-width:760px;margin:0 auto;padding:32px 16px}
+h1{font-size:24px;margin:0 0 4px} p{margin:6px 0}
+.muted{color:var(--muted);font-size:14px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:20px;margin-top:20px}
+label{display:block;font-weight:600;font-size:13px;margin:14px 0 4px}
+input,select{width:100%;font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--text)}
+.row{display:flex;gap:8px} .row > *{flex:1} .row .narrow{flex:0 0 auto}
+.btn,button{display:inline-block;font:inherit;font-weight:600;padding:9px 16px;border-radius:6px;border:0;background:var(--accent);color:#fff;cursor:pointer;text-decoration:none}
+button.secondary{background:transparent;color:var(--accent);border:1px solid var(--line)}
+button:disabled{opacity:.5;cursor:default}
+#log{margin-top:16px;max-height:260px;overflow:auto;font:12px/1.5 ui-monospace,Menlo,monospace;color:var(--muted);background:var(--bg);border-radius:6px;padding:8px 10px}
+#log:empty{display:none}
+#result{margin-top:14px}
+.warn{color:var(--warn)}
+table.icons{width:100%;border-collapse:collapse;font-size:14px;margin-top:6px}
+table.icons th{text-align:left;font-size:12px;color:var(--muted);font-weight:600;padding:4px 6px}
+table.icons td{padding:4px 6px;border-top:1px solid var(--line)}
+table.icons input{width:90px;padding:5px 8px}
+table.icons td.mv{white-space:nowrap}
+table.icons td.mv button{padding:2px 8px;margin-right:2px;font-size:12px}
+@media (max-width:560px){table.icons input{width:64px}}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+@media (max-width:560px){.grid{grid-template-columns:1fr}}
+ol{padding-left:20px;margin:8px 0}
+.tabs{display:flex;gap:4px;margin-top:20px;border-bottom:1px solid var(--line)}
+.tabs button{background:transparent;color:var(--muted);border-radius:6px 6px 0 0;border:1px solid transparent;border-bottom:0;margin-bottom:-1px}
+.tabs button[aria-selected="true"]{background:var(--panel);color:var(--text);border-color:var(--line)}
+.tabs + section.card, .tabpane > section.card:first-child{margin-top:0;border-top-left-radius:0}
+.fields{display:grid;grid-template-columns:repeat(2,1fr);gap:4px 12px}
+.fields label{font-weight:600;font-size:13px;margin:6px 0 0}
+.fields input{margin-top:3px;font-weight:400}
+@media (max-width:560px){.fields{grid-template-columns:1fr}}
+.chk{display:block;font-weight:400;font-size:14px;margin:6px 0}
+.chk input{width:auto;margin-right:6px}
+details.tbl{margin:10px 0}
+details.tbl summary{cursor:pointer;font-weight:600;font-size:14px}
+.scroll{overflow-x:auto}
+table.grid{border-collapse:collapse;font-size:12px;margin-top:6px;min-width:100%}
+table.grid th,table.grid td{border:1px solid var(--line);padding:4px 6px;min-width:40px}
+table.grid th{background:var(--bg);font-weight:600}
+table.grid [contenteditable]:focus{outline:2px solid var(--accent);outline-offset:-2px}
+.picker{margin:16px 0;padding-top:12px;border-top:1px solid var(--line)}
+.pickrow{display:flex;gap:12px;align-items:flex-start}
+.pickmap{flex:1 1 60%;min-width:0}
+.pickmap canvas{width:100%;height:auto;cursor:crosshair;border:1px solid var(--line);border-radius:4px;touch-action:none;display:block}
+.pickside{flex:1 1 40%;min-width:0}
+.pickside canvas{width:100%;height:auto;border:1px solid var(--line);border-radius:4px;display:block;background:#fff}
+.pickside label{font-weight:600;font-size:13px}
+.pickside input[type=range]{padding:0;border:0;background:transparent}
+.pickside .small input{font-size:12px}
+@media (max-width:560px){.pickrow{flex-direction:column}.pickmap,.pickside{width:100%}}
+textarea{width:100%;font:inherit;font-size:14px;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--text);margin-top:4px;resize:vertical}
+#rtexts label{font-weight:600;font-size:13px}
+.badge{font-size:11px;font-weight:600;padding:1px 7px;border-radius:9px;background:var(--bg);color:var(--muted);border:1px solid var(--line);margin-left:6px}
+.badge.ok{color:var(--accent)}
+table.grid td.del{border:0;padding:0 0 0 4px;min-width:0}
+table.grid td.del button,.gridbtns button{padding:2px 9px;font-size:12px}
+.gridbtns{margin:6px 0 0}
+.pickside .preview{touch-action:none}
+.popupctl{margin:6px 0}
+.tbox{margin:12px 0 18px}
+.fld{display:flex;flex-direction:column}
+.fld label{font-weight:600;font-size:13px;margin:8px 0 3px}
+.fld .hint{font-size:12px;color:var(--muted);min-height:0}
+.fld label.nn,.chk.nn{font-weight:400;font-size:12px;color:var(--muted);margin:3px 0 0}
+.fld.missing input:not(:disabled){border-color:var(--warn)}
+.fld input:disabled{opacity:.45}
+.chk.nn.inline{display:inline-block;margin-left:10px}
+details.tbl.nn .scroll,details.tbl.nn .gridbtns{opacity:.4;pointer-events:none}
+.badge.st-ok{color:var(--accent);border-color:var(--accent)}
+.badge.st-partial,.badge.st-blank{color:var(--warn);border-color:var(--warn)}
+.restored{border-color:var(--warn);display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:14px}
+#rcheck ul{margin:4px 0 12px;padding-left:20px;font-size:14px}
+#rcheck .ok{color:var(--accent)}
+figure.example{margin:10px 0 0;max-width:300px}
+body.wide main{max-width:1680px}
+.rright{padding:10px;display:flex;flex-direction:column;margin-top:20px}
+.pbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding-bottom:8px;border-bottom:1px solid var(--line)}
+.pbar #rpstatus{flex:1 1 160px;font-size:12px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pbar .chk.inline{display:inline-flex;align-items:center;margin:0;font-size:13px}
+.btn.small,button.small{padding:5px 11px;font-size:13px}
+.btn.disabled{opacity:.45}
+.pview{overflow:auto;background:#8a9296;padding:12px;border-radius:4px;margin-top:8px;height:75vh}
+.pview .pempty{color:#fff;text-align:center;margin:30% 12px 0;font-size:15px}
+.pview canvas.ppage{width:100%;height:auto;display:block;margin:0 auto 12px;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.35)}
+@media (min-width:700px){
+  .rsplit.has-preview{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:start}
+  .rsplit.has-preview .rright{position:sticky;top:12px;height:calc(100vh - 24px)}
+  .rsplit.has-preview .pview{flex:1;height:auto}
+  .rsplit.has-preview .fields{grid-template-columns:1fr}
+  .rsplit.has-preview .pickrow{flex-direction:column}
+  .rsplit.has-preview .pickmap,.rsplit.has-preview .pickside{width:100%}
+}
+a.secondary-link{margin-left:12px;font-size:14px;color:var(--accent)}
+figure.example img{width:100%;height:auto;border:1px solid var(--line);border-radius:4px;display:block}
+figure.example figcaption{font-size:12px;color:var(--muted);margin-top:3px}
+.tbox.overridden textarea{border-color:var(--warn);box-shadow:0 0 0 2px color-mix(in srgb, var(--warn) 25%, transparent);background:color-mix(in srgb, var(--warn) 6%, var(--bg))}
+.badge.over{color:var(--warn);border-color:var(--warn)}
+details.ex p{margin:6px 0;color:var(--muted)}
+p.small,details.small{font-size:12px}
+#rlog{margin-top:16px;max-height:200px;overflow:auto;font:12px/1.5 ui-monospace,Menlo,monospace;color:var(--muted);background:var(--bg);border-radius:6px;padding:8px 10px}
+#rlog:empty{display:none}
+</style>
+</head>
+<body>
+<main>
+  <h1>PROW Map PDFs</h1>
+  <p class="muted">Makes the print-ready map PDFs for a results map: one map of everything plus one map per layer, ready for InDesign.</p>
+
+  <section id="signedout" class="card">
+    <p>Sign in with your ArcGIS account to get started.</p>
+    <button id="signin">Sign in with ArcGIS</button>
+  </section>
+
+  <nav class="tabs" id="tabs" hidden role="tablist">
+    <button role="tab" data-tab="tab-maps" aria-selected="true">Map PDFs</button>
+    <button role="tab" data-tab="tab-report" aria-selected="false">Full report</button>
+  </nav>
+  <div id="tab-maps" class="tabpane">
+  <section id="app" class="card" hidden>
+    <div class="row" style="align-items:center"><p class="muted">Signed in as <b id="who"></b></p><button id="signout" class="secondary narrow">Sign out</button></div>
+
+    <label for="search">1. Find the map</label>
+    <div class="row"><input id="search" placeholder="e.g. Hilton Head Results Map"><button id="find" class="secondary narrow">Search</button></div>
+    <label for="map">Map</label>
+    <select id="map"></select>
+
+    <label>2. Options</label>
+    <div class="grid">
+      <select id="page" aria-label="Page size"><option value="letter">Letter (11×8.5)</option><option value="tabloid">Tabloid (17×11)</option><option value="a3">A3</option></select>
+      <select id="basemap" aria-label="Basemap"><option value="topo">Topographic basemap</option><option value="imagery">Satellite basemap</option><option value="streets">Streets basemap</option><option value="none">No basemap</option></select>
+      <input id="date" placeholder="Date (blank = today)" aria-label="Date">
+    </div>
+
+    <label>3. Layers: order and icon sizes</label>
+    <div id="icons"><p class="muted">Pick a map to see its layers.</p></div>
+
+    <label>4. Make the PDFs</label>
+    <button id="go" disabled>Generate PDFs</button>
+    <p class="muted">Takes a few minutes for a large city — keep this tab open. A zip downloads when it's done.</p>
+    <div id="log"></div>
+    <div id="result"></div>
+  </section>
+
+  </div>
+
+  <div id="tab-report" class="tabpane" hidden>
+   <div id="rsplit" class="rsplit has-preview">
+   <div class="rleft">
+    <section class="card">
+      <p class="muted">Builds the whole Public Rights-of-Way Evaluation report as one PDF: cover, overview, data reliability, every map and table.</p>
+      <label for="rmap">1. Pick the results map</label>
+      <div class="row"><select id="rmap"></select><button id="rload" class="narrow" disabled>Load map data</button></div>
+      <p class="muted">Uses the map search on the Map PDFs tab. Loading downloads every layer once (about a minute for a large city).</p>
+      <div id="rlog"></div>
+    </section>
+    <div id="rsteps" hidden>
+      <div id="rrestored" class="card restored" hidden><span></span> <button id="rfresh" class="secondary narrow">Start fresh</button></div>
+      <section class="card">
+        <label>2. Report details</label>
+        <div class="fields" id="rfields"></div>
+        <p class="muted">Fill in every box or tick <b>Not needed</b>.</p>
+      </section>
+      <section class="card">
+        <label for="rfiles">3. Tables</label>
+        <p class="muted">Drop in the ADA report generator's output: the <b>report_tables.zip</b>, its folder zipped up, or the Table CSVs. Or type the numbers into the blank templates below. Click any cell to edit it. A data reliability CSV is picked up if its file name contains “reliability” or “accuracy”.</p>
+        <input type="file" id="rfiles" multiple accept=".zip,.csv">
+        <div id="rtables"></div>
+      </section>
+      <section class="card">
+        <label>4. Pages to include</label>
+        <div id="rpages"></div>
+      </section>
+      <section class="card">
+        <label>5. Map layers: order and icon sizes</label>
+        <p class="muted">Drawing order (▲▼) and point sizes for each layer, as on the Map PDFs tab (blank size = automatic). The report shows the maps at about 60% of full size, so 9 pt prints at roughly 5.5 pt. Starts from what's set for this map on the Map PDFs tab; preview the report to check.</p>
+        <div id="ricons"></div>
+      </section>
+      <section class="card">
+        <label>6. Detail views</label>
+        <p class="muted">The zoomed-in pictures on the overview, sidewalk and crosswalk pages.</p>
+        <div id="rpickers"></div>
+      </section>
+      <section class="card">
+        <label>7. Text</label>
+        <p class="muted">Filled in from the details and tables above and kept up to date as they change. Type in a box to write your own — it's then marked <b>Override</b> and stops updating.</p>
+        <div id="rtexts"></div>
+      </section>
+      <section class="card">
+        <label>8. Make the report</label>
+        <div id="rcheck"></div>
+        <button id="rgo">Refresh preview</button>
+        <p class="muted">The preview on the right redraws a moment after every change while <b>Live</b> is on (the first build takes a minute; after that it’s quick). Download it from the preview once the checklist is complete.</p>
+      </section>
+    </div>
+   </div>
+   <aside id="rpreview" class="rright card" aria-label="Report preview">
+     <div class="pbar">
+       <span id="rpstatus" class="muted">Preview</span>
+       <label class="chk inline"><input type="checkbox" id="rlive"> Live</label>
+       <a id="rdl" class="btn small disabled" href="#">Download PDF</a>
+       <button id="ropen" class="secondary small" title="Open a separate window that keeps updating (handy on a second monitor)">Pop out ↗</button>
+       <button id="rclose" class="secondary small" aria-label="Close preview">×</button>
+     </div>
+     <div id="rview" class="pview"><p class="pempty">Pick a results map and click <b>Load map data</b> — the report preview appears here.</p></div>
+   </aside>
+   </div>
+  </div>
+
+  <section class="card">
+    <b>Help</b>
+    <ol class="muted">
+      <li>Sign in with the same ArcGIS account you use for our maps.</li>
+      <li>Search for the city's results map (for example "Hilton Head Results Map") and pick it.</li>
+      <li>Optional: untick the maps you don't need (the all-layers map always shows every layer), use ▲▼ to reorder them (top = drawn on top, first in the legend), and change icon sizes (in points; 9 pt is about 1/8 inch). Leave a box blank for the automatic size. Your sizes are remembered for each map in this browser.</li>
+      <li>Click Generate PDFs and wait for the zip. Each PDF is a single page: the map area is one image and the title, legend and scale bar are sharp text.</li>
+    </ol>
+    <p class="muted">The maps use the styling saved in the web map. If something looks off, fix it in the web map and generate again.</p>
+  </section>
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script type="module" src="app.js"></script>
+</body>
+</html>

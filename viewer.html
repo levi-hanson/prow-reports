@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Report Preview</title>
+<style>
+:root{--bg:#f6f7f8;--panel:#fff;--text:#1c2226;--muted:#5d6b73;--line:#d9e0e4;--accent:#0b6e8a}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#111619;--panel:#182126;--text:#e6eef1;--muted:#93a4ac;--line:#2a363d;--accent:#5fb7cf}}
+:root[data-theme="dark"]{--bg:#111619;--panel:#182126;--text:#e6eef1;--muted:#93a4ac;--line:#2a363d;--accent:#5fb7cf}
+*{box-sizing:border-box}
+[hidden]{display:none !important}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 system-ui,-apple-system,Segoe UI,sans-serif;display:flex;flex-direction:column}
+header{display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:8px 16px;background:var(--panel);border-bottom:1px solid var(--line)}
+header b{font-size:15px}
+#status{flex:1 1 200px;font-size:13px;color:var(--muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+a.btn{font-weight:600;font-size:13px;padding:5px 12px;border-radius:6px;background:var(--accent);color:#fff;text-decoration:none}
+a.btn.disabled{opacity:.45;pointer-events:none}
+#view{flex:1;overflow:auto;background:#8a9296;padding:16px}
+#view canvas{width:100%;max-width:900px;height:auto;display:block;margin:0 auto 16px;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.35)}
+.empty{color:#fff;text-align:center;margin-top:25vh;padding:0 16px}
+</style>
+</head>
+<body>
+<header>
+  <b>Report preview</b>
+  <span id="status">Waiting for the report…</span>
+  <a id="dl" class="btn disabled" href="#">Download PDF</a>
+</header>
+<div id="view"><p class="empty">Keep the report tab open — this window follows its live preview.</p></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script>
+// Live pop-out: the report tab sends each new PDF over a BroadcastChannel; this page redraws it in place.
+pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+const view = document.getElementById("view"), status = document.getElementById("status"), dl = document.getElementById("dl");
+const ch = new BroadcastChannel("prow-report-preview");
+let url = null, latest = null, drawing = false;
+async function draw() {
+  if (drawing || !latest) return;
+  drawing = true;
+  const msg = latest; latest = null;
+  try {
+    const doc = await pdfjsLib.getDocument({ data: msg.bytes.slice() }).promise;
+    const width = Math.min(900, view.clientWidth - 32), dpr = Math.min(window.devicePixelRatio || 1, 2), frag = document.createDocumentFragment();
+    for (let i = 1; i <= doc.numPages; i++) {
+      const page = await doc.getPage(i), v1 = page.getViewport({ scale: 1 }), vp = page.getViewport({ scale: (width * dpr) / v1.width });
+      const c = document.createElement("canvas"); c.width = vp.width; c.height = vp.height;
+      await page.render({ canvasContext: c.getContext("2d"), viewport: vp }).promise;
+      frag.appendChild(c);
+    }
+    const ratio = view.scrollHeight ? view.scrollTop / view.scrollHeight : 0;
+    view.innerHTML = ""; view.appendChild(frag); view.scrollTop = ratio * view.scrollHeight;   // keep your place
+    doc.destroy();
+    if (url) URL.revokeObjectURL(url);
+    url = URL.createObjectURL(new Blob([msg.bytes], { type: "application/pdf" }));
+    dl.href = url; dl.download = msg.name || "report.pdf";
+    status.textContent = msg.status || "Up to date";
+  } catch (e) { status.textContent = `Couldn't show the PDF: ${e.message}`; }
+  drawing = false;
+  if (latest) draw();
+}
+ch.onmessage = (ev) => {
+  const m = ev.data || {};
+  if (m.type === "status") status.textContent = m.text;
+  if (m.type === "pdf") { latest = m; draw(); }
+  if (m.type === "pdf" || m.type === "download") { dl.classList.toggle("disabled", !m.canDownload); dl.title = m.canDownload ? "" : "Finish the checklist in the report tab before downloading"; }
+};
+ch.postMessage({ type: "hello" });
+</script>
+</body>
+</html>
