@@ -9,7 +9,7 @@
 //   renderInset(deps, data, slot, inset, W, H)         -> canvas (for the spot pickers and the PDF)
 //   buildFullReport(deps, data, input, onStatus)       -> ArrayBuffer (PDF)
 
-import { DEFAULTS, resolveLayers, fetchFeatures, combinedExtent, renderBasemap, renderMapImage, rampColor, css, niceRound, fmtNum, layerKey } from "./renderer.js?v=20261017132448";
+import { DEFAULTS, resolveLayers, fetchFeatures, combinedExtent, renderBasemap, renderMapImage, rampColor, css, niceRound, fmtNum, layerKey } from "./renderer.js?v=20261017143717";
 
 // ---------------------------------------------------------------- design tokens (measured from the 2026 Bangor report)
 const PW = 612, PH = 792, ML = 54, CW = 504;            // letter portrait, left margin, content width (pt)
@@ -395,12 +395,13 @@ function slabLengthFt(ring, tv) {
   return Math.hypot(m2[0] - m1[0], m2[1] - m1[1]) * k * 3.28084;
 }
 
-export async function computeTables(deps, data, onStatus = () => {}) {
+// want = Set of table numbers to compute (null = all); only the layers those tables need are read
+export async function computeTables(deps, data, onStatus = () => {}, want = null) {
   const out = {}, notes = [];
-  const G = data.groups;
+  const G = data.groups, needs = (...ns) => !want || ns.some((n) => want.has(n));
   // ---- sidewalks: Table 1 (feet by DCS) and Table 2 (feet by defect), lengths measured from the slab shapes
   const SWL = (G.sidewalks || [])[0];
-  if (SWL) {
+  if (SWL && needs(1, 2)) {
     onStatus("Tables 1–2: measuring sidewalk slabs…");
     const F = { oid: SWL.oidField, path: fieldBy(SWL, "Path ID", "path_id"), ticket: fieldBy(SWL, "Ticket Key", "Ticket ID"), idx: fieldBy(SWL, "Segment Index", "segment_idx"),
       dcs: fieldBy(SWL, "DCS Score"), vo: fieldBy(SWL, "Vertical Offset (IN.)"), rs: fieldBy(SWL, "Running Slope (%)"), cs: fieldBy(SWL, "Cross Slope (%)") };
@@ -440,7 +441,7 @@ export async function computeTables(deps, data, onStatus = () => {}) {
   }
   // ---- crosswalks: Table 3 (lowest score per crosswalk) and Tables 4–7 (by signal type)
   const XL = (G.crosswalks || [])[0];
-  if (XL) {
+  if (XL && needs(3, 4, 5, 6, 7)) {
     onStatus("Tables 3–7: reading crosswalks…");
     const F = { path: fieldBy(XL, "Path ID", "path_id"), ticket: fieldBy(XL, "Ticket Key", "Ticket ID", "jira_id"), dcs: fieldBy(XL, "DCS Score"),
       vo: fieldBy(XL, "Vertical Offset (IN.)"), rs: fieldBy(XL, "Running Slope (%)"), cs: fieldBy(XL, "Cross Slope (%)"), sig: fieldBy(XL, "Crosswalk Signal Type") };
@@ -474,7 +475,7 @@ export async function computeTables(deps, data, onStatus = () => {}) {
   }
   // ---- curb ramps: Table 8 (slopes / widths) and Table 9 (score)
   const CL = (G.curbRamps || [])[0];
-  if (CL) {
+  if (CL && needs(8, 9)) {
     onStatus("Tables 8–9: reading curb ramps…");
     const pick = (...a) => a.map((x) => fieldBy(CL, x));
     const cross = pick("Right Ramp Cross Slope (%)", "Left Ramp Cross Slope (%)", "Center Ramp Cross Slope (%)");
@@ -506,7 +507,7 @@ export async function computeTables(deps, data, onStatus = () => {}) {
   }
   // ---- transit stops: Table 10, from the nearest sidewalk slab's travel path width and cross slope
   const TL = (G.transit || [])[0], SL = (G.sidewalks || [])[0];
-  if (TL && SL) {
+  if (TL && SL && needs(10)) {
     onStatus("Table 10: matching transit stops to the nearest sidewalk…");
     const wF = fieldBy(SL, "Travel Path Width (IN.)"), xF = fieldBy(SL, "Cross Slope (%)");
     const wb = [0, 0, 0, 0], sb = [0, 0, 0, 0];

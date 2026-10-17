@@ -1,8 +1,8 @@
 // "Full report" tab: load a results map, drop in the report generator's tables, pick pages and
 // detail spots, and download the whole evaluation report as one PDF.
 import { loadReportData, buildFullReport, renderInset, renderPickerBase, defaultInset, insetExtent, parseCsv, tableNumber, cleanTable,
-  derivedNumbers, defaultTexts, TEXT_EXAMPLES, computeTables, blankTable, tableHasData, featureAt, popupFields, defaultPopupFields, loadPopup, PAGES, INSETS } from "./report.js?v=20261017132448";
-import { DEFAULTS, layerKey, defaultOrder } from "./renderer.js?v=20261017132448";
+  derivedNumbers, defaultTexts, TEXT_EXAMPLES, computeTables, blankTable, tableHasData, featureAt, popupFields, defaultPopupFields, loadPopup, PAGES, INSETS } from "./report.js?v=20261017143717";
+import { DEFAULTS, layerKey, defaultOrder } from "./renderer.js?v=20261017143717";
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
@@ -86,10 +86,11 @@ async function loadData() {
     log(`Ready: ${data.layers.length} layers.`);
     $("rsteps").hidden = false;
     renderFields(); renderTables(); renderPages(); renderIcons(); renderTexts();
-    await calcTables(false);
-    // preview opens by default and stays live unless it was switched off for this map
+    // preview opens by default and stays live unless it was switched off for this map. It starts straight away;
+    // the tables fill in alongside and the preview redraws when they land.
     S.live = S.live !== false; $("rlive").checked = S.live;
     if (S.live) build(); else $("rview").innerHTML = '<p class="pempty">Live preview is off — tick <b>Live</b> or click <b>Refresh preview</b>.</p>';
+    calcTables(false);
     await renderPickers();
   } catch (e) { log(`Error: ${e.message}`); $("rview").innerHTML = `<p class="pempty">Couldn't load the map: ${esc(e.message)}</p>`; }
   $("rload").disabled = false; $("rload").classList.remove("busy");
@@ -209,11 +210,21 @@ function renderTables() {
 
 // Tables 3–10 from ArcGIS. On load (force=false) only blank tables or ones that came from ArcGIS before are
 // (re)filled, so uploads and hand edits are kept; the button (force=true) replaces 3–10 after confirming.
+// On load only the blank tables are calculated (and only the layers they need are read); tables that are already
+// filled in — from ArcGIS earlier, uploaded or typed — are left alone. The button recalculates all of them.
 async function calcTables(force) {
-  const box = $("rcalcnotes"); box.textContent = "Calculating the tables from ArcGIS…"; $("rcalc").disabled = true;
+  const box = $("rcalcnotes"), forMap = mapId;
+  const want = force ? null : new Set(Object.keys(TABLE_NAMES).map(Number).filter((n) => !tableHasData(S.tables[n])));
+  if (want && !want.size) {
+    box.innerHTML = (S.calcNotes || []).map((s) => `<div>${esc(s)}</div>`).join("") + `<div>All tables are already filled in — click <b>Recalculate from ArcGIS</b> to refresh them.</div>`;
+    return;
+  }
+  box.textContent = "Calculating the tables from ArcGIS…"; $("rcalc").disabled = true;
   box.classList.add("busy"); $("rcalcbox").classList.add("working");
   try {
-    const { tables, notes } = await computeTables({ fetchJson: ctx.fetchJson }, data, (s) => { box.textContent = s; });
+    const { tables, notes } = await computeTables({ fetchJson: ctx.fetchJson }, data, (s) => { box.textContent = s; }, want);
+    if (mapId !== forMap) throw new Error("stale");   // another map was loaded meanwhile
+    S.calcNotes = notes;
     const kept = [];
     for (const [n, t] of Object.entries(tables)) {
       const mine = !tableHasData(S.tables[n]) || S.tableSource[n] === "arcgis";
@@ -221,7 +232,7 @@ async function calcTables(force) {
     }
     box.innerHTML = [...notes.map(esc), kept.length ? `Kept your ${kept.length === 1 ? "table" : "tables"} ${kept.join(", ")} (uploaded or edited) — use the button to replace with ArcGIS.` : ""].filter(Boolean).map((s) => `<div>${s}</div>`).join("") || "The tables are up to date with ArcGIS.";
     save(); renderTables();
-  } catch (e) { box.textContent = `Couldn't calculate from ArcGIS: ${e.message}`; console.error(e); }
+  } catch (e) { if (e.message !== "stale") { box.textContent = `Couldn't calculate from ArcGIS: ${e.message}`; console.error(e); } }
   box.classList.remove("busy"); $("rcalcbox").classList.remove("working");
   $("rcalc").disabled = false;
 }
