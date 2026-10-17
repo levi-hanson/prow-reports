@@ -5,7 +5,7 @@
 //
 // Core functions are environment-agnostic (deps: fetchJson, jsPDF, reportFonts, assets) for Node testing.
 
-import { resolveLayers } from "./renderer.js?v=20261017111834";
+import { resolveLayers } from "./renderer.js?v=20261017112120";
 
 export const CHECKS = [
   { key: "dcs", label: "DCS scores reported", field: /^DCS_SCORE$/i },
@@ -54,8 +54,11 @@ export async function checkMap(deps, sharing, webmapId, onStatus = () => {}) {
         row.checks.images = { applies: true, present: total - missing.length, missing };
         continue;
       }
+      // only check what the client is shown: a field hidden from the web map's popup is not part of the deliverable
       const f = L.fields.find((x) => c.field.test(x.name));
-      if (!f) { row.checks[c.key] = { applies: false }; continue; }
+      const popup = ((L.popupInfo || {}).fieldInfos || []);
+      const shown = !popup.length || popup.some((p) => p.visible !== false && c.field.test(p.fieldName));
+      if (!f || !shown) { row.checks[c.key] = { applies: false, hidden: !!f && !shown }; continue; }
       const where = f.type === "esriFieldTypeString" ? `${f.name} IS NULL OR ${f.name} = ''` : `${f.name} IS NULL`;
       const missing = (await api(deps, `${L.url}/query`, { where, returnIdsOnly: "true" })).objectIds || [];
       row.checks[c.key] = { applies: true, present: total - missing.length, missing, field: f.name };
@@ -214,7 +217,7 @@ function renderResults() {
   $("cresults").innerHTML = `<div class="cbig">${big.map(([k, label, main]) => `<div class="${main ? "main" : ""}"><b>${fmtPct(s[k].pct)}</b><span>${label}</span><span class="muted small">${s[k].total ? `${s[k].present.toLocaleString()} of ${s[k].total.toLocaleString()}` : "not applicable"}</span></div>`).join("")}</div>
     <div class="scroll"><table class="grid ctable"><tr><th>Layer</th><th>Features</th>${CHECKS.map((c) => `<th>${c.label}</th>`).join("")}<th>${COMPLETE_LABEL}</th></tr>
     ${last.layers.map((L) => { const cc = completeCount(L); return `<tr><td>${esc(L.title)}</td><td>${L.total.toLocaleString()}</td>${CHECKS.map((c) => `<td>${cell(L.checks[c.key], L.total)}</td>`).join("")}<td><b>${fmtPct(pct(cc, L.total))}</b><span class="muted small"> · ${(L.total - cc).toLocaleString()} incomplete</span></td></tr>`; }).join("")}</table></div>
-    <p class="muted small">Checked ${last.checkedAt.toLocaleString("en-US")}. Rounded down, so 100% means nothing is missing. A dash means the layer has no such field (or doesn't store images).</p>`;
+    <p class="muted small">Checked ${last.checkedAt.toLocaleString("en-US")}. Rounded down, so 100% means nothing is missing. A dash means the check doesn't apply: the layer has no such field, the field is hidden in the map's popup (not part of what the client gets), or the layer doesn't store images.</p>`;
   $("cactions").hidden = false;
 }
 async function run() {
