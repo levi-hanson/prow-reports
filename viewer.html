@@ -67,6 +67,7 @@ ch.onmessage = (ev) => {
   if (m.type === "pdf" || m.type === "download") { dl.classList.toggle("disabled", !m.canDownload); dl.title = m.canDownload ? "" : "Finish the checklist in the report tab before downloading"; }
 };
 ch.postMessage({ type: "hello" });
+window.addEventListener("pagehide", () => ch.postMessage({ type: "bye" }));
 </script>
 </body>
 </html>

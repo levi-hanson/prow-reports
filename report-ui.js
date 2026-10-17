@@ -61,7 +61,7 @@ function log(msg, progress) {
 async function loadData() {
   const id = $("rmap").value; if (!id) return;
   $("rload").disabled = true; $("rlog").innerHTML = ""; $("rsteps").hidden = true;
-  $("rpreview").hidden = false; $("rsplit").classList.add("has-preview");
+  showSide(!popAlive);
   $("rview").innerHTML = '<p class="pempty">Loading map data…</p>'; pstatus("Preview"); loadPdfJs().catch(() => {});
   try {
     data = await loadReportData(deps(), ctx.SHARING, id, log);
@@ -516,16 +516,33 @@ const channel = typeof BroadcastChannel !== "undefined" ? new BroadcastChannel("
 let lastPdf = null;   // { bytes, name, status }
 const canDownload = () => problems().length === 0;
 const sendPdf = () => { if (channel && lastPdf) channel.postMessage({ type: "pdf", ...lastPdf, canDownload: canDownload() }); };
-if (channel) channel.onmessage = (ev) => { if ((ev.data || {}).type === "hello") sendPdf(); };
+// While the pop-out is open the side pane is hidden (the page goes full width); closing the pop-out brings it back.
+let popWin = null, popAlive = false, sideStale = false;
+function showSide(on) {
+  $("rpreview").hidden = !on; $("rsplit").classList.toggle("has-preview", on);
+  if (on && sideStale && lastPdf) { sideStale = false; showPdf(lastPdf.bytes.slice()); }
+}
+function setPopout(on) {
+  if (popAlive === on) return;
+  popAlive = on; showSide(!on); updatePopNote();
+  if (on) { if (lastPdf) sendPdf(); else if (data && S && S.live) build(); }
+}
+function updatePopNote() { const n = $("rpopnote"); if (n) n.hidden = !popAlive; }
+setInterval(() => { if (popAlive && popWin && popWin.closed) { popWin = null; setPopout(false); } }, 1000);
+if (channel) channel.onmessage = (ev) => {
+  const t = (ev.data || {}).type;
+  if (t === "hello") { sendPdf(); setPopout(true); }
+  if (t === "bye") setPopout(false);
+};
 const pstatus = (s) => { $("rpstatus").textContent = s; if (channel) channel.postMessage({ type: "status", text: s }); };
 function scheduleLive() {
-  if (!S || !data || !S.live || $("rpreview").hidden) return;
+  if (!S || !data || !S.live || ($("rpreview").hidden && !popAlive)) return;
   clearTimeout(liveTimer); liveTimer = setTimeout(() => build(), 900);
 }
 async function build() {
   if (building) { pending = true; return; }
   building = true; pending = false;
-  $("rpreview").hidden = false; $("rsplit").classList.add("has-preview");
+  if (!popAlive) showSide(true);
   pstatus("Updating…");
   try {
     const d = { ...deps(), reportFonts: await reportFonts(), assets: await assets() };
@@ -540,7 +557,7 @@ async function build() {
     lastUrl = URL.createObjectURL(new Blob([bytes], { type: "application/pdf" }));
     const name = `${(S.fields.coverName || S.fields.city || data.title).replace(/[^A-Za-z0-9_-]+/g, "_")}_PROW_Evaluation_Report_${S.fields.year || ""}.pdf`;
     $("rdl").href = lastUrl; $("rdl").download = name; $("rdl").textContent = `Download PDF (${(bytes.length / 1048576).toFixed(1)} MB)`;
-    await showPdf(bytes.slice());
+    if ($("rpreview").hidden) sideStale = true; else await showPdf(bytes.slice());
     const done = `Up to date · ${new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", second: "2-digit" })}`;
     pstatus(done);
     lastPdf = { bytes, name, status: done }; sendPdf();
@@ -575,11 +592,12 @@ export function initReportTab(c) {
     log(`Read ${n} table${n === 1 ? "" : "s"}.`); save(); renderTables();
     $("rfiles").value = "";
   };
-  $("rgo").onclick = () => { $("rpreview").hidden = false; $("rsplit").classList.add("has-preview"); build(); };
+  $("rgo").onclick = () => { if (!popAlive) showSide(true); build(); };
   $("rlive").onchange = (e) => { S.live = e.target.checked; save(); if (S.live) build(); };
   $("rdl").onclick = (e) => { if ($("rdl").classList.contains("disabled") || !lastUrl) { e.preventDefault(); updateChecklist(); $("rcheck").scrollIntoView({ behavior: "smooth", block: "center" }); } };
-  $("ropen").onclick = () => { window.open("viewer.html", "prow-report-viewer", "popup,width=900,height=1000"); };
-  $("rclose").onclick = () => { $("rpreview").hidden = true; $("rsplit").classList.remove("has-preview"); };
+  $("ropen").onclick = () => { popWin = window.open("viewer.html", "prow-report-viewer", "popup,width=900,height=1000"); if (popWin) setPopout(true); };
+  $("rclose").onclick = () => showSide(false);
+  $("rpopback").onclick = (e) => { e.preventDefault(); if (popWin && !popWin.closed) popWin.close(); popWin = null; setPopout(false); };
   $("rfresh").onclick = startFresh;
 }
 // called whenever the map list is refreshed
