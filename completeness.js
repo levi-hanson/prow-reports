@@ -5,7 +5,7 @@
 //
 // Core functions are environment-agnostic (deps: fetchJson, jsPDF, reportFonts, assets) for Node testing.
 
-import { resolveLayers } from "./renderer.js?v=20261017112120";
+import { resolveLayers } from "./renderer.js?v=20261017114159";
 
 export const CHECKS = [
   { key: "dcs", label: "DCS scores reported", field: /^DCS_SCORE$/i },
@@ -161,17 +161,19 @@ export function buildCertificate(deps, res, { client, issuedBy = "Daxbot", date 
   doc.setFillColor(...NAVY); doc.rect(M, y, W - 2 * M, 24, "F");
   head.forEach((h, i) => T(h, i ? cols[i] + cw[i] / 2 : cols[0] + 8, y + 16, "MontSB", 9.5, [255, 255, 255], i ? { align: "center" } : {}));
   y += 24;
-  const rowH = 21, maxRows = Math.floor((H - 150 - y) / rowH);
-  res.layers.slice(0, maxRows).forEach((L, r) => {
+  // every layer gets a row: rows shrink to fit the space above the method note instead of dropping layers
+  const rowsL = res.layers.filter((L) => L.total > 0);   // empty layers have nothing to certify
+  const rowH = Math.min(21, (H - 150 - y) / Math.max(rowsL.length, 1)), maxRows = rowsL.length;
+  rowsL.slice(0, maxRows).forEach((L, r) => {
     if (r % 2) { doc.setFillColor(...TINT); doc.rect(M, y, W - 2 * M, rowH, "F"); }
-    T(L.title.length > 28 ? `${L.title.slice(0, 27)}…` : L.title, cols[0] + 8, y + 14, "Pop", 9, BODY);
-    T(L.total.toLocaleString(), cols[1] + cw[1] / 2, y + 14, "PopM", 9, BODY, { align: "center" });
-    ["dcs", "prowag", "images"].forEach((k, i) => { const c = L.checks[k]; T(c && c.applies ? fmtPct(pct(c.present, L.total)) : "—", cols[i + 2] + cw[i + 2] / 2, y + 14, "PopM", 9, BODY, { align: "center" }); });
-    T(fmtPct(pct(completeCount(L), L.total)), cols[5] + cw[5] / 2, y + 14, "PopSB", 9, NAVY, { align: "center" });
+    const ty = y + rowH / 2 + 3.2, fs = rowH < 17 ? 8 : 9;
+    T(L.title.length > 30 ? `${L.title.slice(0, 29)}…` : L.title, cols[0] + 8, ty, "Pop", fs, BODY);
+    T(L.total.toLocaleString(), cols[1] + cw[1] / 2, ty, "PopM", fs, BODY, { align: "center" });
+    ["dcs", "prowag", "images"].forEach((k, i) => { const c = L.checks[k]; T(c && c.applies ? fmtPct(pct(c.present, L.total)) : "—", cols[i + 2] + cw[i + 2] / 2, ty, "PopM", fs, BODY, { align: "center" }); });
+    T(fmtPct(pct(completeCount(L), L.total)), cols[5] + cw[5] / 2, ty, "PopSB", fs, NAVY, { align: "center" });
     y += rowH;
   });
   doc.setDrawColor(...TEAL); doc.setLineWidth(0.6); doc.line(M, y, W - M, y);
-  if (res.layers.length > maxRows) { y += 14; T(`+ ${res.layers.length - maxRows} more layers (see the missing-items list)`, M, y, "PopL", 8, BODY); }
   // footer: method + signature
   const fy = H - 132;
   T("Method", M, fy, "MontSB", 9.5, HEAD);
