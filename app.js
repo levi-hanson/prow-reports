@@ -1,7 +1,7 @@
-import { CONFIG } from "./config.js?v=20261017120359";
-import { buildReport, resolveLayers, layerKey, defaultOrder, ALL_KEY, DEFAULTS } from "./renderer.js?v=20261017120359";
-import { initReportTab, setReportMaps } from "./report-ui.js?v=20261017120359";
-import { initCompletenessTab, setCompletenessMaps } from "./completeness.js?v=20261017120359";
+import { CONFIG } from "./config.js?v=20261017120608";
+import { buildReport, resolveLayers, layerKey, defaultOrder, ALL_KEY, DEFAULTS } from "./renderer.js?v=20261017120608";
+import { initReportTab, setReportMaps } from "./report-ui.js?v=20261017120608";
+import { initCompletenessTab, setCompletenessMaps } from "./completeness.js?v=20261017120608";
 
 const $ = (id) => document.getElementById(id);
 const SHARING = `${CONFIG.portal}/sharing/rest`;

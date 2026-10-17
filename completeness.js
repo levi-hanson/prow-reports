@@ -5,7 +5,7 @@
 //
 // Core functions are environment-agnostic (deps: fetchJson, jsPDF, reportFonts, assets) for Node testing.
 
-import { resolveLayers } from "./renderer.js?v=20261017120359";
+import { resolveLayers } from "./renderer.js?v=20261017120608";
 
 export const CHECKS = [
   { key: "dcs", label: "DCS scores reported", field: /^DCS_SCORE$/i },
@@ -248,7 +248,8 @@ function loadPdfJs() {
   return pdfjsReady;
 }
 const certOpts = () => ({ client: $("cclient").value.trim(), issuedBy: $("cissuer").value.trim() || "Daxbot", notes, threshold: threshold() });
-const schedulePreview = () => { if (!last) return; clearTimeout(prevTimer); prevTimer = setTimeout(previewCert, 400); };
+const schedulePreview = () => { if (!last || !$("clive").checked || $("cpreview").hidden) return; clearTimeout(prevTimer); prevTimer = setTimeout(previewCert, 400); };
+function showCertPane(on) { $("cpreview").hidden = !on; $("csplit").classList.toggle("has-preview", on); }
 async function previewCert() {
   if (!last) return;
   if (drawing) { again = true; return; }
@@ -260,7 +261,7 @@ async function previewCert() {
     const c = document.createElement("canvas"); c.width = vp.width; c.height = vp.height; c.className = "ppage";
     await page.render({ canvasContext: c.getContext("2d"), viewport: vp }).promise;
     view.innerHTML = ""; view.appendChild(c); doc.destroy();
-    $("cdl").disabled = false;
+    $("cdl").classList.remove("disabled");
     $("cpstatus").textContent = `Up to date · ${new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", second: "2-digit" })}`;
   } catch (e) { $("cpstatus").textContent = `Preview error: ${e.message}`; }
   drawing = false;
@@ -302,12 +303,12 @@ function renderNotes() {
 async function run() {
   const id = $("cmap").value; if (!id) return;
   $("crun").disabled = true; $("clog").innerHTML = ""; $("cresults").innerHTML = ""; $("cactions").hidden = true;
-  $("cdl").disabled = true; $("cview").innerHTML = '<p class="pempty">Checking the map…</p>'; $("cpstatus").textContent = "Certificate preview"; loadPdfJs().catch(() => {});
+  $("cdl").classList.add("disabled"); $("cview").innerHTML = '<p class="pempty">Checking the map…</p>'; $("cpstatus").textContent = "Preview"; showCertPane(true); loadPdfJs().catch(() => {});
   try {
     last = await checkMap({ fetchJson: ctx.fetchJson }, ctx.SHARING, id, log);
     lastId = id; notes = store.get(`cnotes:${id}`) || {};
     if (!$("cclient").value.trim()) $("cclient").value = last.title.replace(/\s*Results Map\s*$/i, "").trim();
-    log("Done."); renderResults(); previewCert();
+    log("Done."); renderResults(); if ($("clive").checked) previewCert(); else $("cview").innerHTML = '<p class="pempty">Live preview is off — tick <b>Live</b> to show the certificate.</p>';
   } catch (e) { log(`Error: ${e.message}`); }
   $("crun").disabled = false;
 }
@@ -317,12 +318,16 @@ export function initCompletenessTab(c) {
   $("csearch").onkeydown = (e) => { if (e.key === "Enter") $("cfind").click(); };
   $("crun").onclick = run;
   const th = store.get("cthresh"); if (th) $("cthresh").value = th;
-  $("ccert").onclick = $("cdl").onclick = async () => {
+  $("ccert").onclick = $("cdl").onclick = async (e) => {
+    if (e) e.preventDefault();
     if (!last) return;
     try { const pdf = buildCertificate(await certDeps(), last, certOpts()); download(new Blob([pdf], { type: "application/pdf" }), `${safe($("cclient").value || last.title)}_Certificate_of_Completeness.pdf`); }
     catch (e) { log(`Error: ${e.message}`); }
   };
   $("cclient").oninput = schedulePreview; $("cissuer").oninput = schedulePreview;
+  $("clive").onchange = () => { if ($("clive").checked && last) previewCert(); };
+  $("cclose").onclick = () => showCertPane(false);
+  $("crun").addEventListener("click", () => showCertPane(true));
   $("ccsv").onclick = async () => {
     $("ccsv").disabled = true;
     try { const rows = await missingRows({ fetchJson: ctx.fetchJson }, last, log); log(`Missing list: ${rows.length.toLocaleString()} features.`); download(new Blob([toCsv(rows)], { type: "text/csv" }), `${safe(last.title)}_missing_items.csv`); }

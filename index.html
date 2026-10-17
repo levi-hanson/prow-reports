@@ -264,7 +264,12 @@ table.ctable td:not(:first-child),table.ctable th:not(:first-child){text-align:c
     </section>
    </div>
    <aside id="cpreview" class="rright card" aria-label="Certificate preview">
-     <div class="pbar"><span id="cpstatus" class="muted">Certificate preview</span><button id="cdl" class="btn small" disabled>Download PDF</button></div>
+     <div class="pbar">
+       <span id="cpstatus" class="muted">Preview</span>
+       <label class="chk inline"><input type="checkbox" id="clive" checked> Live</label>
+       <a id="cdl" class="btn small disabled" href="#">Download PDF</a>
+       <button id="cclose" class="secondary small" aria-label="Close preview">×</button>
+     </div>
      <div id="cview" class="pview"><p class="pempty">Run the checks — the certificate appears here and updates as you edit the name and notes.</p></div>
    </aside>
    </div>
@@ -283,6 +288,6 @@ table.ctable td:not(:first-child),table.ctable th:not(:first-child){text-align:c
 </main>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script type="module" src="app.js?v=20261017120359"></script>
+<script type="module" src="app.js?v=20261017120608"></script>
 </body>
 </html>
