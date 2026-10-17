@@ -1,8 +1,8 @@
 // "Full report" tab: load a results map, drop in the report generator's tables, pick pages and
 // detail spots, and download the whole evaluation report as one PDF.
 import { loadReportData, buildFullReport, renderInset, renderPickerBase, defaultInset, insetExtent, parseCsv, tableNumber, cleanTable,
-  derivedNumbers, defaultTexts, TEXT_EXAMPLES, blankTable, tableHasData, featureAt, popupFields, defaultPopupFields, loadPopup, PAGES, INSETS } from "./report.js?v=20261016185054";
-import { DEFAULTS, layerKey, defaultOrder } from "./renderer.js?v=20261016185054";
+  derivedNumbers, defaultTexts, TEXT_EXAMPLES, blankTable, tableHasData, featureAt, popupFields, defaultPopupFields, loadPopup, PAGES, INSETS } from "./report.js?v=20261016190839";
+import { DEFAULTS, layerKey, defaultOrder } from "./renderer.js?v=20261016190839";
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
@@ -96,9 +96,15 @@ const FIELD_LABELS = [["coverName", "Cover title", "e.g. Bangor, ME  or  Permian
   ["miles", "Sidewalk miles evaluated", "e.g. 117.42"], ["ramps", "Curb ramps evaluated", "e.g. 1,937"]];
 // miles / ramps fall back to the totals of Tables 1 / 9
 const derivedField = (k) => { const d = derivedNumbers(S.tables); return k === "miles" ? d.miles : k === "ramps" ? d.ramps : ""; };
-const fieldDone = (k) => !!S.notNeeded.fields[k] || String(S.fields[k] || "").trim() !== "" || !!derivedField(k);
+// miles and curb ramps are always the table totals (shown greyed out, not typed)
+const DERIVED = { miles: "Table 1", ramps: "Table 9" };
+const fieldDone = (k) => !!DERIVED[k] || !!S.notNeeded.fields[k] || String(S.fields[k] || "").trim() !== "";
 function renderFields() {
-  $("rfields").innerHTML = FIELD_LABELS.map(([k, label, ph]) => `<div class="fld" id="fld-${k}"><label for="f-${k}">${label}</label>
+  $("rfields").innerHTML = FIELD_LABELS.map(([k, label, ph]) => DERIVED[k]
+    ? `<div class="fld derived" id="fld-${k}"><label for="f-${k}">${label}</label>
+      <input id="f-${k}" readonly tabindex="-1" value="${esc(derivedField(k))}" placeholder="from ${DERIVED[k]}">
+      <span class="hint" data-h="${k}"></span></div>`
+    : `<div class="fld" id="fld-${k}"><label for="f-${k}">${label}</label>
       <input id="f-${k}" data-f="${k}" ${k === "date" ? 'type="date"' : ""} value="${esc(S.fields[k])}" placeholder="${esc(ph)}" ${S.notNeeded.fields[k] ? "disabled" : ""}>
       <span class="hint" data-h="${k}"></span>
       <label class="chk nn"><input type="checkbox" data-nn="${k}" ${S.notNeeded.fields[k] ? "checked" : ""}> Not needed</label></div>`).join("");
@@ -112,8 +118,7 @@ function renderFields() {
 function fieldHints() {
   for (const [k] of FIELD_LABELS) {
     const h = $("rfields").querySelector(`[data-h="${k}"]`), el = $(`fld-${k}`); if (!h) continue;
-    const auto = !String(S.fields[k] || "").trim() && derivedField(k);
-    h.textContent = auto ? `Using ${auto} from Table ${k === "miles" ? 1 : 9}` : "";
+    if (DERIVED[k]) { $(`f-${k}`).value = derivedField(k); h.textContent = `Numbers are derived from the tables (${DERIVED[k]})`; }
     el.classList.toggle("missing", !fieldDone(k));
   }
 }
@@ -188,7 +193,7 @@ function renderTables() {
       save(); renderTables();
     };
   });
-  renderPages(); refreshTexts();
+  renderPages(); refreshTexts(); fieldHints();
 }
 
 // ---------------------------------------------------------------- step 4: pages
@@ -385,7 +390,7 @@ function effectiveFields() {
   for (const k of Object.keys(S.notNeeded.fields)) f[k] = "";
   const iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(f.date || "");
   if (iso) f.date = `${iso[2]}/${iso[3]}/${iso[1]}`;
-  f.miles = f.miles || d.miles; f.ramps = f.ramps || d.ramps;
+  f.miles = d.miles; f.ramps = d.ramps;
   f.coverName = f.coverName || f.city;
   return f;
 }
