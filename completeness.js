@@ -5,7 +5,7 @@
 //
 // Core functions are environment-agnostic (deps: fetchJson, jsPDF, reportFonts, assets) for Node testing.
 
-import { resolveLayers } from "./renderer.js?v=20261017144436";
+import { resolveLayers } from "./renderer.js?v=20261020100242";
 
 export const CHECKS = [
   { key: "dcs", label: "DCS scores reported", field: /^DCS_SCORE$/i },

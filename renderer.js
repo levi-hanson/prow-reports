@@ -22,6 +22,8 @@ export const DEFAULTS = {
   jpegQuality: 0.85,
   featureLw: 0.7,             // polygon outline weight (pt)
   iconScale: 0.3,             // point-icon size multiplier
+  minPolyPt: 2.6,             // on a layer's own map, polygons smaller than this (pt) are drawn as a dot this size
+                              // so sparse small features (e.g. crosswalks on a city-wide map) stay visible
   fixRamps0to100: true,       // DCS/RAI ramps pinned to 0-100
   reverseStack: false,
   date: null,                 // null = today, e.g. "11/04/2025"
@@ -337,9 +339,18 @@ async function drawLayer(deps, ctx, L, ctxInfo, cfg, solo, symCache) {
   const tracePath = (g) => { ctx.beginPath(); for (const p of g.paths) { ctx.moveTo(X(p[0][0]), Y(p[0][1])); for (let i = 1; i < p.length; i++) ctx.lineTo(X(p[i][0]), Y(p[i][1])); } };
 
   if (kind === "polygon") {
+    // tiny polygons get a minimum-size dot on their own map (not sidewalks: their slabs touch and already read as lines)
+    const minPx = solo && !/sidewalk/i.test(L.title) ? (cfg.minPolyPt || 0) * pxPerPt : 0;
+    const dot = (g, color) => {
+      if (!minPx) return;
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      for (const ring of g.rings) for (const p of ring) { const x = X(p[0]), y = Y(p[1]); if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+      if (Math.max(x1 - x0, y1 - y0) >= minPx) return;
+      ctx.beginPath(); ctx.arc((x0 + x1) / 2, (y0 + y1) / 2, minPx / 2, 0, 2 * Math.PI); ctx.fillStyle = color; ctx.fill();
+    };
     if (ramp) {
       ctx.lineWidth = cfg.featureLw * pxPerPt; ctx.lineJoin = "round";
-      for (const f of L.features) { const c = css(rampColor(ramp, attr(f, ramp.field), fixed), L.opacity); tracePoly(f.geometry); ctx.fillStyle = c; ctx.strokeStyle = c; ctx.fill("evenodd"); ctx.stroke(); }
+      for (const f of L.features) { const c = css(rampColor(ramp, attr(f, ramp.field), fixed), L.opacity); tracePoly(f.geometry); ctx.fillStyle = c; ctx.strokeStyle = c; ctx.fill("evenodd"); ctx.stroke(); dot(f.geometry, c); }
       return { kind: "ramp", label: L.title, ramp, vmin: fixed ? 0 : ramp.stops[0][0], vmax: fixed ? 100 : ramp.stops[ramp.stops.length - 1][0] };
     }
     const { field, resolve } = symbolResolver(r); let rep = null;
@@ -347,6 +358,7 @@ async function drawLayer(deps, ctx, L, ctxInfo, cfg, solo, symCache) {
       const st = fillStyle(resolve(attr(f, field))); rep = rep || st; tracePoly(f.geometry);
       if (st.face) { ctx.fillStyle = css(st.face, L.opacity); ctx.fill("evenodd"); }
       if (st.edge && st.lw > 0) { ctx.strokeStyle = css(st.edge); ctx.lineWidth = st.lw * pxPerPt; ctx.stroke(); }
+      if (st.face || st.edge) dot(f.geometry, css(st.face || st.edge, L.opacity));
     }
     rep = rep || fillStyle(r.symbol);
     return { kind: "swatch", label: L.title, face: rep.face, edge: rep.edge || GREY };

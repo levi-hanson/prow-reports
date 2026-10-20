@@ -1,8 +1,8 @@
 // "Full report" tab: load a results map, drop in the report generator's tables, pick pages and
 // detail spots, and download the whole evaluation report as one PDF.
 import { loadReportData, buildFullReport, renderInset, renderPickerBase, defaultInset, insetExtent, parseCsv, tableNumber, cleanTable,
-  derivedNumbers, defaultTexts, TEXT_EXAMPLES, computeTables, blankTable, tableHasData, featureAt, popupFields, defaultPopupFields, loadPopup, PAGES, INSETS } from "./report.js?v=20261017144436";
-import { DEFAULTS, layerKey, defaultOrder } from "./renderer.js?v=20261017144436";
+  derivedNumbers, defaultTexts, TEXT_EXAMPLES, computeTables, blankTable, tableHasData, featureAt, popupFields, defaultPopupFields, loadPopup, PAGES, INSETS } from "./report.js?v=20261020100242";
+import { DEFAULTS, layerKey, defaultOrder } from "./renderer.js?v=20261020100242";
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
@@ -24,7 +24,7 @@ function blankState() {
   const d = new Date(), today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   return { fields: { coverName: "", city: "", shortName: "", year: String(new Date().getFullYear()), date: today, miles: "", ramps: "" },
     tables: {}, reliability: blankTable("reliability"), include: PAGES.map((p) => p[0]), insets: {}, texts: {}, textOverride: {}, popupOn: true, popup: null,
-    notNeeded: { fields: {}, tables: {} }, icons: null, order: null, tableSource: {}, savedAt: null };
+    notNeeded: { fields: {}, tables: {} }, icons: null, order: null, tableSource: {}, scoreBy: null, savedAt: null };
 }
 const save = () => { if (!mapId) return; S.savedAt = Date.now(); local.set(`report:${mapId}`, S); updateChecklist(); scheduleLive(); };
 
@@ -90,7 +90,7 @@ async function loadData() {
     // the tables fill in alongside and the preview redraws when they land.
     S.live = S.live !== false; $("rlive").checked = S.live;
     if (S.live) build(); else $("rview").innerHTML = '<p class="pempty">Live preview is off — tick <b>Live</b> or click <b>Refresh preview</b>.</p>';
-    calcTables(false);
+    renderBinBy(); calcTables(false);
     await renderPickers();
   } catch (e) { log(`Error: ${e.message}`); $("rview").innerHTML = `<p class="pempty">Couldn't load the map: ${esc(e.message)}</p>`; }
   $("rload").disabled = false; $("rload").classList.remove("busy");
@@ -212,17 +212,30 @@ function renderTables() {
 // (re)filled, so uploads and hand edits are kept; the button (force=true) replaces 3–10 after confirming.
 // On load only the blank tables are calculated (and only the layers they need are read); tables that are already
 // filled in — from ArcGIS earlier, uploaded or typed — are left alone. The button recalculates all of them.
-async function calcTables(force) {
+const SCORE_TABLES = [1, 3, 9];
+function renderBinBy() {
+  const box = $("rbinby");
+  box.querySelectorAll("input").forEach((r) => { r.checked = r.value === S.scoreBy; r.onchange = () => {
+    S.scoreBy = r.value; box.classList.add("done"); save();
+    // re-bin the score tables that came from ArcGIS (or are blank); uploaded / edited ones are kept
+    calcTables(false, new Set(SCORE_TABLES.filter((n) => !tableHasData(S.tables[n]) || S.tableSource[n] === "arcgis")));
+  }; });
+  box.classList.toggle("done", !!S.scoreBy);
+}
+async function calcTables(force, only = null) {
   const box = $("rcalcnotes"), forMap = mapId;
-  const want = force ? null : new Set(Object.keys(TABLE_NAMES).map(Number).filter((n) => !tableHasData(S.tables[n])));
+  let want = only || (force ? null : new Set(Object.keys(TABLE_NAMES).map(Number).filter((n) => !tableHasData(S.tables[n]))));
+  if (!S.scoreBy) want = new Set([...(want || Object.keys(TABLE_NAMES).map(Number))].filter((n) => !SCORE_TABLES.includes(n)));
   if (want && !want.size) {
-    box.innerHTML = (S.calcNotes || []).map((s) => `<div>${esc(s)}</div>`).join("") + `<div>All tables are already filled in — click <b>Recalculate from ArcGIS</b> to refresh them.</div>`;
+    box.innerHTML = (S.scoreBy ? "" : "<div>Pick DCS or RAI above to fill Tables 1, 3 and 9.</div>") + (S.calcNotes || []).filter((s) => !/^Pick DCS/.test(s)).map((s) => `<div>${esc(s)}</div>`).join("")
+      + `<div>${S.scoreBy ? "All tables are already filled in" : "The other tables are already filled in"} — click <b>Recalculate from ArcGIS</b> to refresh them.</div>`;
     return;
   }
   box.textContent = "Calculating the tables from ArcGIS…"; $("rcalc").disabled = true;
   box.classList.add("busy"); $("rcalcbox").classList.add("working");
   try {
-    const { tables, notes } = await computeTables({ fetchJson: ctx.fetchJson }, data, (s) => { box.textContent = s; }, want);
+    const { tables, notes } = await computeTables({ fetchJson: ctx.fetchJson }, data, (s) => { box.textContent = s; }, want, S.scoreBy);
+    if (!S.scoreBy) notes.unshift("Pick DCS or RAI above to fill Tables 1, 3 and 9.");
     if (mapId !== forMap) throw new Error("stale");   // another map was loaded meanwhile
     S.calcNotes = notes;
     const kept = [];
@@ -512,7 +525,7 @@ async function startFresh() {
   S.fields.shortName = $("rmap").selectedOptions[0]?.textContent.replace(/\s*Results Map\s*$/i, "").trim() || "";
   for (const k of Object.keys(uploads)) delete uploads[k];
   showRestored(null);
-  renderFields(); renderTables(); renderPages(); renderIcons(); renderTexts(); await renderPickers(); save();
+  renderFields(); renderTables(); renderPages(); renderIcons(); renderTexts(); renderBinBy(); await renderPickers(); save();
 }
 // what still needs attention: details fields, and every table a chosen page uses
 function problems() {
@@ -526,6 +539,7 @@ function problems() {
     const st = tableStatus(k);
     if (st.s === "blank" || st.s === "partial") out.push([`tbl-${k}`, `${k === "reliability" ? "Data reliability table" : `Table ${k} (${TABLE_NAMES[k]})`}: ${st.s === "blank" ? "blank" : st.label}`]);
   }
+  if (!S.scoreBy) out.push(["rbinby", "Tables: choose whether Tables 1, 3 and 9 are binned by DCS or RAI"]);
   if (!S.include.length) out.push(["rpages", "Pages: none selected"]);
   return out;
 }
