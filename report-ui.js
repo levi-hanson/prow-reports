@@ -1,8 +1,8 @@
 // "Full report" tab: load a results map, drop in the report generator's tables, pick pages and
 // detail spots, and download the whole evaluation report as one PDF.
 import { loadReportData, buildFullReport, renderInset, renderPickerBase, defaultInset, insetExtent, parseCsv, tableNumber, cleanTable,
-  derivedNumbers, defaultTexts, TEXT_EXAMPLES, computeTables, blankTable, tableHasData, featureAt, popupFields, defaultPopupFields, loadPopup, PAGES, INSETS } from "./report.js?v=20261021104546";
-import { DEFAULTS, layerKey, defaultOrder } from "./renderer.js?v=20261021104546";
+  derivedNumbers, defaultTexts, TEXT_EXAMPLES, computeTables, blankTable, tableHasData, featureAt, popupFields, defaultPopupFields, loadPopup, PAGES, INSETS } from "./report.js?v=20261021105325";
+import { DEFAULTS, layerKey, defaultOrder } from "./renderer.js?v=20261021105325";
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
@@ -302,6 +302,7 @@ function renderPopupControls() {
   const fields = popupFields(L), chosen = (S.popup && S.popup.fields) || defaultPopupFields(L);
   box.innerHTML = `<label class="chk"><input type="checkbox" class="popon" ${S.popupOn ? "checked" : ""}> Show a popup</label>
     <p class="muted small">${S.popup && S.popup.oid != null ? "Click another crosswalk in the preview to change it." : "Click a crosswalk in the preview to pick it."}</p>
+    <p class="small photonote" style="color:#b45309" hidden></p>
     <details class="small" ${S.popupOn ? "" : "hidden"}><summary>Popup fields (${chosen.length})</summary>
     ${fields.map((f) => `<label class="chk"><input type="checkbox" data-pf="${esc(f.name)}" ${chosen.includes(f.name) ? "checked" : ""}> ${esc(f.label)}</label>`).join("")}</details>`;
   box.querySelector(".popon").onchange = (e) => { S.popupOn = e.target.checked; save(); renderPopupControls(); preview("crosswalk"); };
@@ -394,6 +395,8 @@ async function preview(slot) {
     if (uploads[slot]) src = await ctx.loadImage(URL.createObjectURL(new Blob([uploads[slot].data], { type: "image/jpeg" })));
     else {
       const pp = slot === "crosswalk" && S.popupOn && S.popup && S.popup.oid != null ? await loadPopup(deps(), data, slot, S.popup.oid, S.popup.fields || []) : null;
+      const note = slot === "crosswalk" && p.el.querySelector(".photonote");
+      if (note) { note.textContent = (pp && pp.photoNote) || ""; note.hidden = !(pp && pp.photoNote); }
       src = await renderInset(deps(), data, slot, S.insets[slot], W, H, wPt / 72, pp);
     }
   } catch (e) { log(`Preview: ${e.message}`); return; }

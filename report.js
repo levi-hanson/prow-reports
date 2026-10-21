@@ -9,7 +9,7 @@
 //   renderInset(deps, data, slot, inset, W, H)         -> canvas (for the spot pickers and the PDF)
 //   buildFullReport(deps, data, input, onStatus)       -> ArrayBuffer (PDF)
 
-import { DEFAULTS, resolveLayers, fetchFeatures, combinedExtent, renderBasemap, renderMapImage, rampColor, css, niceRound, fmtNum, layerKey } from "./renderer.js?v=20261021104546";
+import { DEFAULTS, resolveLayers, fetchFeatures, combinedExtent, renderBasemap, renderMapImage, rampColor, css, niceRound, fmtNum, layerKey } from "./renderer.js?v=20261021105325";
 
 // ---------------------------------------------------------------- design tokens (measured from the 2026 Bangor report)
 const PW = 612, PH = 792, ML = 54, CW = 504;            // letter portrait, left margin, content width (pt)
@@ -158,7 +158,17 @@ const fmtValue = (field, v) => {
   if (typeof v === "number" && !Number.isInteger(v)) return v.toFixed(2);
   return String(v);
 };
-// one feature's attributes (all fields) + its first photo attachment
+// first media image in the popup, with {field} placeholders filled from the feature
+function mediaImageUrl(pi, attrs) {
+  const els = pi ? [...(pi.popupElements || []).filter((e) => e.type === "media").flatMap((e) => e.mediaInfos || []), ...(pi.mediaInfos || [])] : [];
+  for (const m of els) {
+    if (m.type !== "image" || !m.value || !m.value.sourceURL) continue;
+    const u = m.value.sourceURL.replace(/\{([^}]+)\}/g, (_, f) => { const k = Object.keys(attrs).find((n) => n.toLowerCase() === f.toLowerCase()); return k && attrs[k] != null ? attrs[k] : ""; });
+    if (/^https?:\/\/\S+$/.test(u)) return u;
+  }
+  return null;
+}
+// one feature's attributes (all fields) + its first photo (attachment or popup media image)
 export async function loadPopup(deps, data, slot, oid, fieldNames) {
   const ls = data.groups[INSETS[slot].focus] || [];
   for (const L of ls) {
@@ -169,18 +179,24 @@ export async function loadPopup(deps, data, slot, oid, fieldNames) {
     if (!data.popupCache.has(key)) {
       const q = await deps.fetchJson(`${L.url}/query`, { objectIds: oid, outFields: "*", returnGeometry: "false" });
       const attrs = ((q.features || [])[0] || {}).attributes || {};
-      let photo = null;
+      let photo = null, photoNote = null;
       if (L.hasAttachments && deps.fetchImage) {
         const a = await deps.fetchJson(`${L.url}/${oid}/attachments`, {});
         const info = (a.attachmentInfos || []).find((x) => /^image\//.test(x.contentType || "image/")) || (a.attachmentInfos || [])[0];
         if (info) { try { photo = await deps.fetchImage(`${L.url}/${oid}/attachments/${info.id}`); } catch (e) { photo = null; } }
       }
-      data.popupCache.set(key, { attrs, photo });
+      // popups whose photo is a media image built from a URL field, e.g. {image_url_perspective}
+      const src = !photo && mediaImageUrl(L.popupInfo, attrs);
+      if (src) {
+        try { const r = await fetch(src); if (!r.ok) throw new Error(r.status); photo = await deps.loadImage(URL.createObjectURL(await r.blob())); }
+        catch (e) { photoNote = `Photo couldn't be loaded from ${new URL(src).host} (the image server doesn't allow it to be read from this page).`; }
+      }
+      data.popupCache.set(key, { attrs, photo, photoNote });
     }
-    const { attrs, photo } = data.popupCache.get(key);
+    const { attrs, photo, photoNote } = data.popupCache.get(key);
     const labels = Object.fromEntries(popupFields(L).map((f) => [f.name, f.label]));
     const rows = fieldNames.map((n) => [labels[n] || n, fmtValue(L.fields.find((f) => f.name === n), attrs[n])]);
-    return { layer: L, feature, title: (L.popupInfo && L.popupInfo.title && !/\{/.test(L.popupInfo.title)) ? L.popupInfo.title : L.title, rows, photo };
+    return { layer: L, feature, title: (L.popupInfo && L.popupInfo.title && !/\{/.test(L.popupInfo.title)) ? L.popupInfo.title : L.title, rows, photo, photoNote };
   }
   return null;
 }
@@ -194,7 +210,7 @@ function drawPopup(cv, ext, p) {
   if (geo.rings) { g.fillStyle = "rgba(0,255,255,0.25)"; g.fill(); }
   g.strokeStyle = "rgb(0,255,255)"; g.lineWidth = 2 * u; g.stroke(); g.restore();
   // panel
-  const x = 10 * u, y = 8 * u, w = 338 * u, h = Math.min(372 * u, H - 16 * u), font = (px, wt = 400) => `${wt} ${px * u}px "Avenir Next", "Segoe UI", Helvetica, Arial, sans-serif`;
+  const x = 10 * u, y = 8 * u, w = 338 * u, h = Math.min(p.photo ? 372 * u : (78 + 22 * p.rows.length) * u, H - 16 * u), font = (px, wt = 400) => `${wt} ${px * u}px "Avenir Next", "Segoe UI", Helvetica, Arial, sans-serif`;
   g.save();
   g.shadowColor = "rgba(0,0,0,0.3)"; g.shadowBlur = 8 * u; g.shadowOffsetY = 2 * u;
   g.fillStyle = "#fff"; g.fillRect(x, y, w, h); g.restore();
