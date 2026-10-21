@@ -1,8 +1,8 @@
 // "Full report" tab: load a results map, drop in the report generator's tables, pick pages and
 // detail spots, and download the whole evaluation report as one PDF.
 import { loadReportData, buildFullReport, renderInset, renderPickerBase, defaultInset, insetExtent, parseCsv, tableNumber, cleanTable,
-  derivedNumbers, defaultTexts, TEXT_EXAMPLES, computeTables, blankTable, tableHasData, featureAt, popupFields, defaultPopupFields, loadPopup, PAGES, INSETS } from "./report.js?v=20261021104403";
-import { DEFAULTS, layerKey, defaultOrder } from "./renderer.js?v=20261021104403";
+  derivedNumbers, defaultTexts, TEXT_EXAMPLES, computeTables, blankTable, tableHasData, featureAt, popupFields, defaultPopupFields, loadPopup, PAGES, INSETS } from "./report.js?v=20261021104546";
+import { DEFAULTS, layerKey, defaultOrder } from "./renderer.js?v=20261021104546";
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
@@ -456,28 +456,34 @@ function effectiveFields() {
 // Same meaning as the Map PDFs tab (points on the full-size landscape map); the report shows those maps
 // shrunk to about 60%. Starts from whatever was set for this map on the Map PDFs tab.
 const iconKey = (title) => title.trim().toLowerCase();
+// Report defaults (Levi 2026-10-21): stacking order top-first, and point sizes (pt on the full-size map) for the
+// all-layers map / each layer's own page. Detail views default to automatic. Layers not listed keep the usual stacking.
+const REPORT_ORDER = ["access barriers", "pedestrian signals", "curb ramps", "sidewalks", "crosswalks", "pedestrian refuge islands",
+  "accessible on-street parking locations", "transit stop boarding areas"];
+const REPORT_SIZES = { "access barriers": [1, 1.8], "pedestrian signals": [6, 9], "curb ramps": [4, 4], "pedestrian refuge islands": [6, 9],
+  "accessible on-street parking locations": [6, 9], "transit stop boarding areas": [6, 9] };
+function reportOrder(layers) {
+  const pref = (l) => { const i = REPORT_ORDER.indexOf(iconKey(l.title)); return i < 0 ? 1e9 : i; };
+  return defaultOrder(layers).map((l, i) => ({ l, i })).sort((a, b) => pref(a.l) - pref(b.l) || a.i - b.i).map((o) => layerKey(o.l));
+}
 function renderIcons() {
   const pts = data.layers.filter((l) => /Point/.test(l.geometryType || ""));
   if (!S.icons) {
-    const fromMaps = local.get(`icons:${mapId}`) || {};
     S.icons = {};
-    for (const l of pts) {
-      const k = iconKey(l.title), d = DEFAULTS.iconOverrides[k] || {}, m = fromMaps[k] || {};
-      S.icons[k] = { overview: m.overview !== undefined ? m.overview : d.overview_pt ?? null, solo: m.solo !== undefined ? m.solo : d.solo_pt ?? null };
-    }
+    for (const l of pts) { const k = iconKey(l.title), d = REPORT_SIZES[k] || [null, null]; S.icons[k] = { overview: d[0], solo: d[1], detail: null }; }
   }
-  // layer order (top = drawn on top, first in the legend): saved, else the Map PDFs tab's, else the default stacking
-  const keys = data.layers.map(layerKey), saved = S.order || local.get(`order:${mapId}`) || [];
+  // layer order (top = drawn on top, first in the legend): saved for this map, else the report default
+  const keys = data.layers.map(layerKey), saved = S.order || [];
   const rank = (k) => { const i = saved.indexOf(k); return i < 0 ? 1e9 : i; };
-  const dflt = defaultOrder(data.layers).map(layerKey);
+  const dflt = reportOrder(data.layers);
   S.order = dflt.map((k, i) => ({ k, i })).sort((a, b) => rank(a.k) - rank(b.k) || a.i - b.i).map((o) => o.k).filter((k) => keys.includes(k));
   const byKey = Object.fromEntries(data.layers.map((l) => [layerKey(l), l])), n = S.order.length;
-  $("ricons").innerHTML = `<table class="icons"><tr><th>Order</th><th>Layer</th><th>Overview map (pt)</th><th>Own map page (pt)</th></tr>
+  $("ricons").innerHTML = `<table class="icons"><tr><th>Order</th><th>Layer</th><th>Overview map (pt)</th><th>Own map page (pt)</th><th>Detail views (pt)</th></tr>
     ${S.order.map((key, i) => { const l = byKey[key], k = iconKey(l.title), v = S.icons[k] || {}, d = DEFAULTS.iconOverrides[k] || {};
-      const inp = (kind) => `<input type="number" min="0.5" max="40" step="0.1" data-ik="${esc(k)}" data-kind="${kind}" value="${v[kind] ?? ""}" placeholder="auto${d[kind] && d[kind] !== 1 ? ` ×${d[kind]}` : ""}" aria-label="${esc(l.title)} ${kind} icon size">`;
+      const inp = (kind) => `<input type="number" min="0.5" max="40" step="0.1" data-ik="${esc(k)}" data-kind="${kind}" value="${v[kind] ?? ""}" placeholder="auto${kind !== "detail" && d[kind] && d[kind] !== 1 ? ` ×${d[kind]}` : ""}" aria-label="${esc(l.title)} ${kind} icon size">`;
       const pt = /Point/.test(l.geometryType || "");
       return `<tr><td class="mv"><button class="secondary" data-mv="${i}" data-d="-1" ${i ? "" : "disabled"} aria-label="Move ${esc(l.title)} up">▲</button><button class="secondary" data-mv="${i}" data-d="1" ${i < n - 1 ? "" : "disabled"} aria-label="Move ${esc(l.title)} down">▼</button></td>
-        <td>${esc(l.title)}</td>${pt ? `<td>${inp("overview")}</td><td>${inp("solo")}</td>` : '<td class="muted">—</td><td class="muted">—</td>'}</tr>`; }).join("")}</table>
+        <td>${esc(l.title)}</td>${pt ? `<td>${inp("overview")}</td><td>${inp("solo")}</td><td>${inp("detail")}</td>` : '<td class="muted">—</td><td class="muted">—</td><td class="muted">—</td>'}</tr>`; }).join("")}</table>
     <p class="muted small">Top of the list is drawn on top and comes first in the legend. <a href="#" id="riconreset">Reset order and sizes</a></p>`;
   $("ricons").querySelectorAll("input").forEach((i) => i.oninput = () => {
     const v = parseFloat(i.value); (S.icons[i.dataset.ik] ||= {})[i.dataset.kind] = v > 0 ? v : null;
@@ -499,7 +505,7 @@ function iconOverrides() {
   const out = {};
   for (const [k, v] of Object.entries(S.icons || {})) {
     const o = { ...(DEFAULTS.iconOverrides[k] || {}) };
-    for (const kind of ["overview", "solo"]) { if (v[kind]) o[`${kind}_pt`] = v[kind]; else delete o[`${kind}_pt`]; }
+    for (const kind of ["overview", "solo", "detail"]) { if (v[kind]) o[`${kind}_pt`] = v[kind]; else delete o[`${kind}_pt`]; }
     out[k] = o;
   }
   return out;

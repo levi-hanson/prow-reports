@@ -1,7 +1,7 @@
-import { CONFIG } from "./config.js?v=20261021104403";
-import { buildReport, resolveLayers, layerKey, defaultOrder, ALL_KEY, DEFAULTS } from "./renderer.js?v=20261021104403";
-import { initReportTab, setReportMaps } from "./report-ui.js?v=20261021104403";
-import { initCompletenessTab, setCompletenessMaps } from "./completeness.js?v=20261021104403";
+import { CONFIG } from "./config.js?v=20261021104546";
+import { buildReport, resolveLayers, layerKey, defaultOrder, ALL_KEY, DEFAULTS } from "./renderer.js?v=20261021104546";
+import { initReportTab, setReportMaps } from "./report-ui.js?v=20261021104546";
+import { initCompletenessTab, setCompletenessMaps } from "./completeness.js?v=20261021104546";
 
 const $ = (id) => document.getElementById(id);
 // One map at a time across the tabs: whichever tab loads a map announces it ("prow:map-loaded") and the other

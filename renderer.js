@@ -137,8 +137,10 @@ function sizeFromScale(r, mapScale, def) {
 }
 
 const iconOverride = (cfg, title, solo) => cfg.iconOverrides[title.trim().toLowerCase()] || {};
-const iconMult = (cfg, title, solo) => iconOverride(cfg, title, solo)[solo ? "solo" : "overview"] ?? 1;
-const iconPt = (cfg, title, solo) => iconOverride(cfg, title, solo)[solo ? "solo_pt" : "overview_pt"] ?? null;
+// solo: false = all-layers map, true = the layer's own map, "detail" = the report's zoomed-in detail views
+const sizeKey = (solo) => (solo === "detail" ? "detail" : solo ? "solo" : "overview");
+const iconMult = (cfg, title, solo) => (solo === "detail" ? 1 : iconOverride(cfg, title, solo)[sizeKey(solo)] ?? 1);
+const iconPt = (cfg, title, solo) => iconOverride(cfg, title, solo)[`${sizeKey(solo)}_pt`] ?? null;
 
 // ---------------------------------------------------------------- CIM point symbols
 function cimPrims(ps) {
@@ -340,7 +342,7 @@ async function drawLayer(deps, ctx, L, ctxInfo, cfg, solo, symCache) {
 
   if (kind === "polygon") {
     // tiny polygons get a minimum-size dot on their own map (not sidewalks: their slabs touch and already read as lines)
-    const minPx = solo && !/sidewalk/i.test(L.title) ? (cfg.minPolyPt || 0) * pxPerPt : 0;
+    const minPx = solo === true && !/sidewalk/i.test(L.title) ? (cfg.minPolyPt || 0) * pxPerPt : 0;
     const dot = (g, color) => {
       if (!minPx) return;
       let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
