@@ -1,8 +1,8 @@
 // "Full report" tab: load a results map, drop in the report generator's tables, pick pages and
 // detail spots, and download the whole evaluation report as one PDF.
 import { loadReportData, buildFullReport, renderInset, renderPickerBase, defaultInset, insetExtent, parseCsv, tableNumber, cleanTable,
-  derivedNumbers, defaultTexts, TEXT_EXAMPLES, computeTables, blankTable, tableHasData, featureAt, popupFields, defaultPopupFields, loadPopup, PAGES, INSETS } from "./report.js?v=20261021105541";
-import { DEFAULTS, layerKey, defaultOrder } from "./renderer.js?v=20261021105541";
+  derivedNumbers, defaultTexts, TEXT_EXAMPLES, computeTables, blankTable, tableHasData, featureAt, popupFields, defaultPopupFields, loadPopup, PAGES, INSETS } from "./report.js?v=20261021112535";
+import { DEFAULTS, layerKey, defaultOrder } from "./renderer.js?v=20261021112535";
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
@@ -461,10 +461,11 @@ function effectiveFields() {
 const iconKey = (title) => title.trim().toLowerCase();
 // Report defaults (Levi 2026-10-21): stacking order top-first, and point sizes (pt on the full-size map) for the
 // all-layers map / each layer's own page. Detail views default to automatic. Layers not listed keep the usual stacking.
-const REPORT_ORDER = ["access barriers", "pedestrian signals", "curb ramps", "sidewalks", "crosswalks", "pedestrian refuge islands",
+const REPORT_ORDER = ["access barriers", "pedestrian refuge islands", "pedestrian signals", "curb ramps", "sidewalks", "crosswalks",
   "accessible on-street parking locations", "transit stop boarding areas"];
-const REPORT_SIZES = { "access barriers": [1, 1.8], "pedestrian signals": [6, 9], "curb ramps": [4, 4], "pedestrian refuge islands": [6, 9],
-  "accessible on-street parking locations": [6, 9], "transit stop boarding areas": [6, 9] };
+// [overview, own page, detail views]
+const REPORT_SIZES = { "access barriers": [1, 1.8, 5], "pedestrian signals": [6, 9, 6], "curb ramps": [4, 4, 5], "pedestrian refuge islands": [6, 9, 6],
+  "accessible on-street parking locations": [6, 9, 6], "transit stop boarding areas": [6, 9, 6] };
 function reportOrder(layers) {
   const pref = (l) => { const i = REPORT_ORDER.indexOf(iconKey(l.title)); return i < 0 ? 1e9 : i; };
   return defaultOrder(layers).map((l, i) => ({ l, i })).sort((a, b) => pref(a.l) - pref(b.l) || a.i - b.i).map((o) => layerKey(o.l));
@@ -473,7 +474,7 @@ function renderIcons() {
   const pts = data.layers.filter((l) => /Point/.test(l.geometryType || ""));
   if (!S.icons) {
     S.icons = {};
-    for (const l of pts) { const k = iconKey(l.title), d = REPORT_SIZES[k] || [null, null]; S.icons[k] = { overview: d[0], solo: d[1], detail: null }; }
+    for (const l of pts) { const k = iconKey(l.title), d = REPORT_SIZES[k] || [null, null, null]; S.icons[k] = { overview: d[0], solo: d[1], detail: d[2] }; }
   }
   // layer order (top = drawn on top, first in the legend): saved for this map, else the report default
   const keys = data.layers.map(layerKey), saved = S.order || [];
