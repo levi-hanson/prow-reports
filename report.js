@@ -9,7 +9,7 @@
 //   renderInset(deps, data, slot, inset, W, H)         -> canvas (for the spot pickers and the PDF)
 //   buildFullReport(deps, data, input, onStatus)       -> ArrayBuffer (PDF)
 
-import { DEFAULTS, resolveLayers, fetchFeatures, combinedExtent, renderBasemap, renderMapImage, rampColor, css, niceRound, fmtNum, layerKey } from "./renderer.js?v=20261020100242";
+import { DEFAULTS, resolveLayers, fetchFeatures, combinedExtent, renderBasemap, renderMapImage, rampColor, css, niceRound, fmtNum, layerKey } from "./renderer.js?v=20261021104403";
 
 // ---------------------------------------------------------------- design tokens (measured from the 2026 Bangor report)
 const PW = 612, PH = 792, ML = 54, CW = 504;            // letter portrait, left margin, content width (pt)
@@ -46,9 +46,9 @@ export const PAGES = [
 
 // The three spots the user picks: which layers they show and their shape
 export const INSETS = {
-  overview:  { label: "Overview map detail", layers: null, focus: "sidewalks", aspect: 157 / 99, basemap: "lightTopo" },
-  sidewalk:  { label: "Sidewalk panel detail", layers: ["sidewalks"], focus: "sidewalks", aspect: 100 / 96, basemap: "lightTopo" },
-  crosswalk: { label: "Crosswalk details", layers: ["crosswalks", "sidewalks"], focus: "crosswalks", aspect: 500 / 270, basemap: "lightTopo" },
+  overview:  { label: "Overview map detail", layers: null, focus: "sidewalks", aspect: 157 / 99, basemap: "topo" },
+  sidewalk:  { label: "Sidewalk panel detail", layers: ["sidewalks"], focus: "sidewalks", aspect: 100 / 96, basemap: "topo" },
+  crosswalk: { label: "Crosswalk details", layers: ["crosswalks", "sidewalks"], focus: "crosswalks", aspect: 500 / 270, basemap: "topo" },
 };
 
 // ---------------------------------------------------------------- data
