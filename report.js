@@ -9,7 +9,7 @@
 //   renderInset(deps, data, slot, inset, W, H)         -> canvas (for the spot pickers and the PDF)
 //   buildFullReport(deps, data, input, onStatus)       -> ArrayBuffer (PDF)
 
-import { DEFAULTS, resolveLayers, fetchFeatures, combinedExtent, renderBasemap, renderMapImage, rampColor, css, niceRound, fmtNum, layerKey } from "./renderer.js?v=20261021105325";
+import { DEFAULTS, resolveLayers, fetchFeatures, combinedExtent, renderBasemap, renderMapImage, rampColor, css, niceRound, fmtNum, layerKey } from "./renderer.js?v=20261021105541";
 
 // ---------------------------------------------------------------- design tokens (measured from the 2026 Bangor report)
 const PW = 612, PH = 792, ML = 54, CW = 504;            // letter portrait, left margin, content width (pt)
@@ -168,6 +168,23 @@ function mediaImageUrl(pi, attrs) {
   }
   return null;
 }
+// a layer with the same name and attachments in another FeatureServer this map uses (e.g. *_Data_External)
+async function hostedTwin(deps, data, L) {
+  data.twinCache = data.twinCache || new Map();
+  if (data.twinCache.has(L.url)) return data.twinCache.get(L.url);
+  const base = (u) => (u || "").replace(/\/\d+\/?$/, "");
+  const bases = [...new Set((data.layers || []).map((x) => base(x.url)))].filter((b) => /FeatureServer$/.test(b) && b !== base(L.url));
+  let twin = null;
+  for (const b of bases) {
+    const svc = await deps.fetchJson(b, {}).catch(() => null);
+    const hit = svc && (svc.layers || []).find((x) => x.name.toLowerCase() === L.title.toLowerCase());
+    if (!hit) continue;
+    const info = await deps.fetchJson(`${b}/${hit.id}`, {}).catch(() => null);
+    if (info && info.hasAttachments) { twin = { url: `${b}/${hit.id}`, oidField: info.objectIdField || "OBJECTID", fields: (info.fields || []).map((f) => f.name) }; break; }
+  }
+  data.twinCache.set(L.url, twin);
+  return twin;
+}
 // one feature's attributes (all fields) + its first photo (attachment or popup media image)
 export async function loadPopup(deps, data, slot, oid, fieldNames) {
   const ls = data.groups[INSETS[slot].focus] || [];
@@ -190,6 +207,22 @@ export async function loadPopup(deps, data, slot, oid, fieldNames) {
       if (src) {
         try { const r = await fetch(src); if (!r.ok) throw new Error(r.status); photo = await deps.loadImage(URL.createObjectURL(await r.blob())); }
         catch (e) { photoNote = `Photo couldn't be loaded from ${new URL(src).host} (the image server doesn't allow it to be read from this page).`; }
+      }
+      // otherwise the same photo as an attachment on a hosted copy of this layer (another service the map uses)
+      if (!photo && deps.fetchImage) {
+        try {
+          const twin = await hostedTwin(deps, data, L), keyField = twin && ["segment_id", "GlobalID"].find((n) => attrs[n] != null && twin.fields.includes(n));
+          if (keyField) {
+            const v = attrs[keyField], where = typeof v === "number" ? `${keyField}=${v}` : `${keyField}='${String(v).replace(/'/g, "''")}'`;
+            const q2 = await deps.fetchJson(`${twin.url}/query`, { where, outFields: twin.oidField, returnGeometry: "false" });
+            const toid = (((q2.features || [])[0] || {}).attributes || {})[twin.oidField];
+            if (toid != null) {
+              const a = await deps.fetchJson(`${twin.url}/${toid}/attachments`, {});
+              const info = (a.attachmentInfos || []).find((x) => /^image\//.test(x.contentType || "image/"));
+              if (info) { photo = await deps.fetchImage(`${twin.url}/${toid}/attachments/${info.id}`); photoNote = null; }
+            }
+          }
+        } catch (e) { /* keep the note */ }
       }
       data.popupCache.set(key, { attrs, photo, photoNote });
     }
