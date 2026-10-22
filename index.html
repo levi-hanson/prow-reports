@@ -21,8 +21,8 @@ input,select{width:100%;font:inherit;padding:8px 10px;border:1px solid var(--lin
 .btn,button{display:inline-block;font:inherit;font-weight:600;padding:9px 16px;border-radius:6px;border:0;background:var(--accent);color:#fff;cursor:pointer;text-decoration:none}
 button.secondary{background:transparent;color:var(--accent);border:1px solid var(--line)}
 button:disabled{opacity:.5;cursor:default}
-#log{margin-top:16px;max-height:260px;overflow:auto;font:12px/1.5 ui-monospace,Menlo,monospace;color:var(--muted);background:var(--bg);border-radius:6px;padding:8px 10px}
-#log:empty{display:none}
+#log,#xlog{margin-top:16px;max-height:260px;overflow:auto;font:12px/1.5 ui-monospace,Menlo,monospace;color:var(--muted);background:var(--bg);border-radius:6px;padding:8px 10px}
+#log:empty,#xlog:empty{display:none}
 #result{margin-top:14px}
 .warn{color:var(--warn)}
 table.icons{width:100%;border-collapse:collapse;font-size:14px;margin-top:6px}
@@ -164,50 +164,31 @@ table.ctable td:not(:first-child),table.ctable th:not(:first-child){text-align:c
   <nav class="tabs" id="tabs" hidden role="tablist">
     <button role="tab" data-tab="tab-report" aria-selected="true">Full report</button>
     <button role="tab" data-tab="tab-complete" aria-selected="false">Completeness</button>
-    <button role="tab" data-tab="tab-maps" aria-selected="false">Map PDFs</button>
+    <button role="tab" data-tab="tab-maps" aria-selected="false">Data export</button>
   </nav>
   <div id="tab-maps" class="tabpane" hidden>
-   <div id="msplit" class="rsplit has-preview">
-   <div class="rleft">
   <section id="app" class="card" hidden>
-    <p class="muted">Makes the print-ready map PDFs for a results map: one map of everything plus one map per layer, ready for InDesign.</p>
-    <label for="search">1. Find the results map</label>
+    <p class="muted">Exports everything behind a map, like <code>daxbot_data_export_gdb.py</code>: a file geodatabase of each feature service plus every photo, saved straight into a folder you pick.</p>
+    <label for="search">1. Find the map</label>
     <div class="row"><input id="search" placeholder="e.g. Hilton Head Results Map"><button id="find" class="secondary narrow">Search</button></div>
-    <div class="row" style="margin-top:8px"><select id="map" aria-label="Results map"></select><button id="mload" class="narrow" disabled>Load map</button></div>
+    <div class="row" style="margin-top:8px"><select id="map" aria-label="Map"></select><button id="mload" class="narrow" disabled>Load map</button></div>
   </section>
-  <div id="msteps" hidden>
+  <div id="xsteps" hidden>
   <section class="card">
-    <label>2. Options</label>
-    <div class="grid">
-      <select id="page" aria-label="Page size"><option value="letter">Letter (11×8.5)</option><option value="tabloid">Tabloid (17×11)</option><option value="a3">A3</option></select>
-      <select id="basemap" aria-label="Basemap"><option value="topo">Topographic basemap</option><option value="imagery">Satellite basemap</option><option value="streets">Streets basemap</option><option value="none">No basemap</option></select>
-      <input id="date" placeholder="Date (blank = today)" aria-label="Date">
-    </div>
-
+    <label>2. Layers to export</label>
+    <p class="muted small">Every layer of each feature service the map uses. Empty layers start unticked.</p>
+    <div id="xlayers"></div>
   </section>
   <section class="card">
-    <label>3. Layers: order and icon sizes</label>
-    <div id="icons"><p class="muted">Pick a map to see its layers.</p></div>
-  </section>
-  <section class="card">
-    <label>4. Make the PDFs</label>
-    <button id="go" disabled>Refresh preview</button>
-    <p class="muted">The preview on the right redraws a moment after every change while <b>Live</b> is on. The first build downloads the layers (a minute or so for a large city); after that it's quicker. Download from the preview: a zip of every PDF, or the PDF itself when there's only one.</p>
-    <div id="log"></div>
+    <label>3. Export</label>
+    <div class="row"><label class="chk inline"><input type="checkbox" id="xgdb" checked> File geodatabase</label>
+      <label class="chk inline"><input type="checkbox" id="ximg" checked> Photos</label></div>
+    <p class="muted small">You pick a folder; each service gets <code>&lt;Service&gt;/&lt;Service&gt;.gdb</code> and <code>&lt;Service&gt;/images/&lt;layer&gt;/&lt;OBJECTID&gt;_&lt;name&gt;</code>. ArcGIS builds the geodatabase; photos download 8 at a time. A big city's photos take hours — keep this tab open. If it stops, click Export again and it carries on where it left off. <span id="xnote"></span></p>
+    <div class="row"><button id="xgo" disabled>Export</button><button id="xstop" class="secondary narrow" hidden>Stop</button></div>
+    <progress id="xbar" hidden style="width:100%;margin-top:8px"></progress>
+    <div id="xlog" class="log"></div>
   </section>
   </div>
-   </div>
-   <aside id="mpreview" class="rright card" aria-label="Map PDF preview">
-     <div class="pbar">
-       <span id="mpstatus" class="muted">Preview</span>
-       <label class="chk inline"><input type="checkbox" id="mlive" checked> Live</label>
-       <a id="mdl" class="btn small disabled" href="#">Download PDFs</a>
-       <button id="mclose" class="secondary small" aria-label="Close preview">×</button>
-     </div>
-     <select id="mpick" aria-label="Which PDF to preview" hidden style="margin-top:8px"></select>
-     <div id="mview" class="pview"><p class="pempty">Pick a results map and click <b>Load map</b> — the map PDFs appear here.</p></div>
-   </aside>
-   </div>
   </div>
 
   <div id="tab-report" class="tabpane" hidden>
@@ -329,6 +310,6 @@ table.ctable td:not(:first-child),table.ctable th:not(:first-child){text-align:c
 </main>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script type="module" src="app.js?v=20261022134245"></script>
+<script type="module" src="app.js?v=20261022135329"></script>
 </body>
 </html>
