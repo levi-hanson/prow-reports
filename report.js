@@ -9,7 +9,7 @@
 //   renderInset(deps, data, slot, inset, W, H)         -> canvas (for the spot pickers and the PDF)
 //   buildFullReport(deps, data, input, onStatus)       -> ArrayBuffer (PDF)
 
-import { DEFAULTS, resolveLayers, fetchFeatures, combinedExtent, renderBasemap, renderMapImage, rampColor, css, niceRound, fmtNum, layerKey } from "./renderer.js?v=20261022132149";
+import { DEFAULTS, resolveLayers, fetchFeatures, combinedExtent, renderBasemap, renderMapImage, rampColor, css, niceRound, fmtNum, layerKey } from "./renderer.js?v=20261022132246";
 
 // ---------------------------------------------------------------- design tokens (measured from the 2026 Bangor report)
 const PW = 612, PH = 792, ML = 54, CW = 504;            // letter portrait, left margin, content width (pt)
@@ -447,6 +447,7 @@ function slabLengthFt(ring, tv) {
 // want = Set of table numbers to compute (null = all); only the layers those tables need are read
 // scoreBy = "dcs" | "rai" picks the score that Tables 1, 3 and 9 are binned by (customer-specific); without it
 // those three are left out and everything else is still calculated
+export const tableScore = (t) => (/RAI/.test(String(((t || {}).rows || [[]])[0][0] || "")) ? "RAI" : "DCS");
 export async function computeTables(deps, data, onStatus = () => {}, want = null, scoreBy = null) {
   const out = {}, notes = [];
   const G = data.groups, needs = (...ns) => !want || ns.some((n) => want.has(n));
@@ -836,11 +837,13 @@ export async function buildFullReport(deps, data, input, onStatus = () => {}) {
   // widest map (<= maxW) that leaves room for what follows it on the page
   const fitW = (maxW, top, after) => Math.min(maxW, (BOTTOM - top - FIG_BELOW - after) * MAP_ASPECT);
   const G = data.groups;
+  // Tables 1 and 9 say which score they were binned by in their row label ("RAI Score" or DCS)
+  const byScore = (n) => (/RAI/.test(String(((tables[n] || {}).rows || [[]])[0][0] || "")) ? "RAI" : "DCS");
   const CAP = {
-    1: "Feet of sidewalk to be brought up to PROWAG standard in each phase of repair, starting with panels that present the greatest hazard and going to panels that present less hazard, by DCS.",
+    1: `Feet of sidewalk to be brought up to PROWAG standard in each phase of repair, starting with panels that present the greatest hazard and going to panels that present less hazard, by ${byScore(1)}.`,
     2: "We broke sidewalk segments into categories based on the defects present. Categories list sidewalk by feet surveyed from least to most compliant, going from left to right.",
     8: "We broke curb ramps into categories based on the defects present. Categories list curb ramps from least to most compliant, going from left to right.",
-    9: "Curb ramps to be brought up to PROWAG standard in each phase of repair, starting with curb ramps that present the greatest hazard and going to curb ramps that present less hazard, by DCS.",
+    9: `Curb ramps to be brought up to PROWAG standard in each phase of repair, starting with curb ramps that present the greatest hazard and going to curb ramps that present less hazard, by ${byScore(9)}.`,
     10: "Transit stops to be brought up to PROWAG standard in each phase of repair, starting with transit stops that present the greatest hazard and going to transit stops that present the fewest barriers to access.",
   };
   // a map figure followed by "Table N[: title]", the table and (optionally) its caption

@@ -1,8 +1,8 @@
 // "Full report" tab: load a results map, drop in the report generator's tables, pick pages and
 // detail spots, and download the whole evaluation report as one PDF.
-import { loadReportData, buildFullReport, renderInset, renderPickerBase, defaultInset, insetExtent, parseCsv, tableNumber, cleanTable,
-  derivedNumbers, defaultTexts, TEXT_EXAMPLES, computeTables, blankTable, tableHasData, featureAt, popupFields, defaultPopupFields, loadPopup, PAGES, INSETS } from "./report.js?v=20261022132149";
-import { DEFAULTS, layerKey, defaultOrder } from "./renderer.js?v=20261022132149";
+import { loadReportData, tableScore, buildFullReport, renderInset, renderPickerBase, defaultInset, insetExtent, parseCsv, tableNumber, cleanTable,
+  derivedNumbers, defaultTexts, TEXT_EXAMPLES, computeTables, blankTable, tableHasData, featureAt, popupFields, defaultPopupFields, loadPopup, PAGES, INSETS } from "./report.js?v=20261022132246";
+import { DEFAULTS, layerKey, defaultOrder } from "./renderer.js?v=20261022132246";
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
@@ -12,8 +12,10 @@ const local = {
 };
 // printed size (pt) of each detail slot — uploads are cropped to this shape
 const SLOT_PT = { overview: [157, 99], sidewalk: [100, 96], crosswalk: [500, 270] };
-const TABLE_NAMES = { 1: "Sidewalk phasing (DCS)", 2: "Sidewalk defects", 3: "Crosswalks by score", 4: "Yield / stop control", 5: "Traffic signal",
+const TABLE_NAMES = { 1: "Sidewalk phasing", 2: "Sidewalk defects", 3: "Crosswalks by score", 4: "Yield / stop control", 5: "Traffic signal",
   6: "Uncontrolled", 7: "Midblock / roundabout", 8: "Curb ramp defects", 9: "Curb ramp phasing", 10: "Transit stops" };
+// Tables 1 and 9 name the score they are binned by: RAI or DCS, per the table (RAI falls back to DCS per layer)
+const tableName = (k) => (k === 1 || k === 9) && (tableHasData(S.tables[k]) || S.scoreBy) ? `${TABLE_NAMES[k]} (${tableHasData(S.tables[k]) ? tableScore(S.tables[k]) : S.scoreBy.toUpperCase()})` : TABLE_NAMES[k];
 const NEEDS = { overviewMap: { t: [1] }, sidewalkMap: { g: "sidewalks", t: [2] }, crosswalkMap: { g: "crosswalks", t: [3] }, crosswalkDetails: { t: [4, 5, 6, 7] },
   curbMap: { g: "curbRamps", t: [8] }, curbPhasing: { t: [9] }, refuge: { g: "refuge" }, signals: { g: "signals" }, transit: { g: "transit", t: [10] } };
 
@@ -183,7 +185,7 @@ function gridHtml(key, title) {
 const openGrids = new Set();
 function renderTables() {
   const keys = [...Array.from({ length: 10 }, (_, i) => i + 1), "reliability"];
-  $("rtables").innerHTML = keys.map((k) => gridHtml(k, k === "reliability" ? "Data reliability (page 3)" : `Table ${k} — ${TABLE_NAMES[k]}`)).join("")
+  $("rtables").innerHTML = keys.map((k) => gridHtml(k, k === "reliability" ? "Data reliability (page 3)" : `Table ${k} — ${tableName(+k)}`)).join("")
     + `<p class="muted">Every table a chosen page uses must be filled in or marked <b>Not needed</b> (not-needed tables are left out). Tables are numbered in the report in the order they appear.</p>`;
   $("rtables").querySelectorAll("details").forEach((d) => d.ontoggle = () => { d.open ? openGrids.add(d.dataset.k) : openGrids.delete(d.dataset.k); });
   $("rtables").querySelectorAll("table.grid").forEach((tbl) => {
@@ -550,7 +552,7 @@ function problems() {
   if (S.include.includes("reliability")) need.add("reliability");
   for (const k of [...need].sort((a, b) => (a === "reliability") - (b === "reliability") || a - b)) {
     const st = tableStatus(k);
-    if (st.s === "blank" || st.s === "partial") out.push([`tbl-${k}`, `${k === "reliability" ? "Data reliability table" : `Table ${k} (${TABLE_NAMES[k]})`}: ${st.s === "blank" ? "blank" : st.label}`]);
+    if (st.s === "blank" || st.s === "partial") out.push([`tbl-${k}`, `${k === "reliability" ? "Data reliability table" : `Table ${k} (${tableName(+k)})`}: ${st.s === "blank" ? "blank" : st.label}`]);
   }
   if (!S.scoreBy) out.push(["rbinby", "Tables: choose whether Tables 1, 3 and 9 are binned by DCS or RAI"]);
   if (!S.include.length) out.push(["rpages", "Pages: none selected"]);
