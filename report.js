@@ -9,7 +9,7 @@
 //   renderInset(deps, data, slot, inset, W, H)         -> canvas (for the spot pickers and the PDF)
 //   buildFullReport(deps, data, input, onStatus)       -> ArrayBuffer (PDF)
 
-import { DEFAULTS, resolveLayers, fetchFeatures, combinedExtent, renderBasemap, renderMapImage, rampColor, css, niceRound, fmtNum, layerKey } from "./renderer.js?v=20261022134046";
+import { DEFAULTS, resolveLayers, fetchFeatures, combinedExtent, renderBasemap, renderMapImage, rampColor, css, niceRound, fmtNum, layerKey } from "./renderer.js?v=20261022134245";
 
 // ---------------------------------------------------------------- design tokens (measured from the 2026 Bangor report)
 const PW = 612, PH = 792, ML = 54, CW = 504;            // letter portrait, left margin, content width (pt)
@@ -983,7 +983,7 @@ export async function buildFullReport(deps, data, input, onStatus = () => {}) {
   }
   if (on("curbPhasing") && has(9)) {
     newPage("curb");
-    W.text(`Table ${tableNo + 1}: Curb Ramp Phasing by DCS`, ML, 78, "MontB", 13, C.heading);
+    W.text(`Table ${tableNo + 1}: Curb Ramp Phasing by ${byScore(9)}`, ML, 78, "MontB", 13, C.heading);
     const y = table(9, 90);
     caption(tableNo, CAP[9], y + 22);
   }
