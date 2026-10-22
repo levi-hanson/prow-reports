@@ -3,7 +3,7 @@
 //   <Service_Title>/<Service_Title>.gdb      file geodatabase, built by ArcGIS (createReplica) and unzipped here
 //   <Service_Title>/images/<layer>/<OBJECTID>_<name>   every photo attachment
 // Photos already in the folder (same name and size) are skipped, so an interrupted export can simply be re-run.
-import { resolveLayers } from "./renderer.js?v=20261022135329";
+import { resolveLayers } from "./renderer.js?v=20261022142347";
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
@@ -162,7 +162,8 @@ async function exportPhotos(s, root) {
 async function run() {
   if (!window.showDirectoryPicker) { fail("Saving into a folder needs Chrome or Edge on a computer. Open this page there to export."); return; }
   let root;
-  try { root = await window.showDirectoryPicker({ id: "prow-export", mode: "readwrite" }); } catch { return; }   // cancelled
+  log("Pick a folder to export into. Chrome won't allow your home folder or folders with system files — use New Folder in the picker to make one, e.g. Downloads/PROW exports.");
+  try { root = await window.showDirectoryPicker({ id: "prow-export", mode: "readwrite", startIn: "downloads" }); } catch { $("xlog").innerHTML = ""; return; }   // cancelled
   running = true; stopRequested = false; updateGo(); $("xstop").hidden = false; $("xlog").innerHTML = "";
   const t0 = Date.now();
   try {

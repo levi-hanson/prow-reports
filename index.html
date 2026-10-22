@@ -183,7 +183,7 @@ table.ctable td:not(:first-child),table.ctable th:not(:first-child){text-align:c
     <label>3. Export</label>
     <div class="row"><label class="chk inline"><input type="checkbox" id="xgdb" checked> File geodatabase</label>
       <label class="chk inline"><input type="checkbox" id="ximg" checked> Photos</label></div>
-    <p class="muted small">You pick a folder; each service gets <code>&lt;Service&gt;/&lt;Service&gt;.gdb</code> and <code>&lt;Service&gt;/images/&lt;layer&gt;/&lt;OBJECTID&gt;_&lt;name&gt;</code>. ArcGIS builds the geodatabase; photos download 8 at a time. A big city's photos take hours — keep this tab open. If it stops, click Export again and it carries on where it left off. <span id="xnote"></span></p>
+    <p class="muted small">You pick a folder — make a new one (e.g. <i>Downloads/PROW exports</i>); Chrome won't let pages write into your home folder or folders with system files. Each service gets <code>&lt;Service&gt;/&lt;Service&gt;.gdb</code> and <code>&lt;Service&gt;/images/&lt;layer&gt;/&lt;OBJECTID&gt;_&lt;name&gt;</code>. ArcGIS builds the geodatabase; photos download 8 at a time. A big city's photos take hours — keep this tab open. If it stops, click Export again and it carries on where it left off. <span id="xnote"></span></p>
     <div class="row"><button id="xgo" disabled>Export</button><button id="xstop" class="secondary narrow" hidden>Stop</button></div>
     <progress id="xbar" hidden style="width:100%;margin-top:8px"></progress>
     <div id="xlog" class="log"></div>
@@ -310,6 +310,6 @@ table.ctable td:not(:first-child),table.ctable th:not(:first-child){text-align:c
 </main>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script type="module" src="app.js?v=20261022135329"></script>
+<script type="module" src="app.js?v=20261022142347"></script>
 </body>
 </html>
