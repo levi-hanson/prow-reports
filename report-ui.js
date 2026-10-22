@@ -1,8 +1,8 @@
 // "Full report" tab: load a results map, drop in the report generator's tables, pick pages and
 // detail spots, and download the whole evaluation report as one PDF.
 import { loadReportData, buildFullReport, renderInset, renderPickerBase, defaultInset, insetExtent, parseCsv, tableNumber, cleanTable,
-  derivedNumbers, defaultTexts, TEXT_EXAMPLES, computeTables, blankTable, tableHasData, featureAt, popupFields, defaultPopupFields, loadPopup, PAGES, INSETS } from "./report.js?v=20261022131747";
-import { DEFAULTS, layerKey, defaultOrder } from "./renderer.js?v=20261022131747";
+  derivedNumbers, defaultTexts, TEXT_EXAMPLES, computeTables, blankTable, tableHasData, featureAt, popupFields, defaultPopupFields, loadPopup, PAGES, INSETS } from "./report.js?v=20261022132149";
+import { DEFAULTS, layerKey, defaultOrder } from "./renderer.js?v=20261022132149";
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
@@ -222,9 +222,11 @@ function renderBinBy() {
   }; });
   box.classList.toggle("done", !!S.scoreBy);
 }
+// bump when the table rules change: tables that came from ArcGIS under older rules are recalculated on load
+const CALC_VERSION = 2;
 async function calcTables(force, only = null) {
-  const box = $("rcalcnotes"), forMap = mapId;
-  let want = only || (force ? null : new Set(Object.keys(TABLE_NAMES).map(Number).filter((n) => !tableHasData(S.tables[n]))));
+  const box = $("rcalcnotes"), forMap = mapId, stale = S.calcVersion !== CALC_VERSION;
+  let want = only || (force ? null : new Set(Object.keys(TABLE_NAMES).map(Number).filter((n) => !tableHasData(S.tables[n]) || (stale && S.tableSource[n] === "arcgis"))));
   if (!S.scoreBy) want = new Set([...(want || Object.keys(TABLE_NAMES).map(Number))].filter((n) => !SCORE_TABLES.includes(n)));
   if (want && !want.size) {
     box.innerHTML = (S.scoreBy ? "" : "<div>Pick DCS or RAI above to fill Tables 1, 3 and 9.</div>") + (S.calcNotes || []).filter((s) => !/^Pick DCS/.test(s)).map((s) => `<div>${esc(s)}</div>`).join("")
@@ -238,6 +240,7 @@ async function calcTables(force, only = null) {
     if (!S.scoreBy) notes.unshift("Pick DCS or RAI above to fill Tables 1, 3 and 9.");
     if (mapId !== forMap) throw new Error("stale");   // another map was loaded meanwhile
     S.calcNotes = notes;
+    if (!only || stale) S.calcVersion = CALC_VERSION;
     const kept = [];
     for (const [n, t] of Object.entries(tables)) {
       if (want && !want.has(+n)) continue;   // came along with a wanted table from the same layer
