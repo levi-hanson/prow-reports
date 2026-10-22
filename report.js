@@ -9,7 +9,7 @@
 //   renderInset(deps, data, slot, inset, W, H)         -> canvas (for the spot pickers and the PDF)
 //   buildFullReport(deps, data, input, onStatus)       -> ArrayBuffer (PDF)
 
-import { DEFAULTS, resolveLayers, fetchFeatures, combinedExtent, renderBasemap, renderMapImage, rampColor, css, niceRound, fmtNum, layerKey } from "./renderer.js?v=20261021112535";
+import { DEFAULTS, resolveLayers, fetchFeatures, combinedExtent, renderBasemap, renderMapImage, rampColor, css, niceRound, fmtNum, layerKey } from "./renderer.js?v=20261022131747";
 
 // ---------------------------------------------------------------- design tokens (measured from the 2026 Bangor report)
 const PW = 612, PH = 792, ML = 54, CW = 504;            // letter portrait, left margin, content width (pt)
@@ -450,15 +450,23 @@ function slabLengthFt(ring, tv) {
 export async function computeTables(deps, data, onStatus = () => {}, want = null, scoreBy = null) {
   const out = {}, notes = [];
   const G = data.groups, needs = (...ns) => !want || ns.some((n) => want.has(n));
-  const SC = scoreBy === "rai" ? "RAI Score" : "DCS Score", SN = scoreBy === "rai" ? "RAI" : "DCS";
-  const scoreLabel = scoreBy === "rai" ? "RAI Score" : "Dax Compliance Score (DCS)";
+  // RAI is used per layer only where that layer has RAI scores; otherwise the layer falls back to DCS
+  const LABEL = { RAI: "RAI Score", DCS: "Dax Compliance Score (DCS)" };
+  const scoreFields = (L) => ({ rai: scoreBy === "rai" ? fieldBy(L, "RAI Score") : null, dcs: fieldBy(L, "DCS Score") });
+  const pickScore = (sf, attrs, layerName, table) => {
+    if (sf.rai && attrs.some((a) => a[sf.rai] != null && a[sf.rai] !== "")) return { f: sf.rai, SN: "RAI" };
+    if (scoreBy === "rai") notes.push(`The ${layerName} layer has no RAI scores, so Table ${table} uses DCS.`);
+    return { f: sf.dcs, SN: "DCS" };
+  };
   // ---- sidewalks: Table 1 (feet by DCS) and Table 2 (feet by defect), lengths measured from the slab shapes
   const SWL = (G.sidewalks || [])[0];
   if (SWL && needs(1, 2)) {
     onStatus("Tables 1–2: measuring sidewalk slabs…");
     const F = { oid: SWL.oidField, path: fieldBy(SWL, "Path ID", "path_id"), ticket: fieldBy(SWL, "Ticket Key", "Ticket ID"), idx: fieldBy(SWL, "Segment Index", "segment_idx"),
-      dcs: fieldBy(SWL, SC), vo: fieldBy(SWL, "Vertical Offset (IN.)"), rs: fieldBy(SWL, "Running Slope (%)"), cs: fieldBy(SWL, "Cross Slope (%)") };
-    const attrs = new Map((await layerAttrs(deps, SWL, Object.values(F))).map((a) => [a[F.oid], a]));
+      ...(() => { const sf = scoreFields(SWL); return { rai: sf.rai, dcs: sf.dcs }; })(), vo: fieldBy(SWL, "Vertical Offset (IN.)"), rs: fieldBy(SWL, "Running Slope (%)"), cs: fieldBy(SWL, "Cross Slope (%)") };
+    const swAttrs = await layerAttrs(deps, SWL, Object.values(F));
+    const S1 = pickScore(F, swAttrs, "sidewalk", 1);
+    const attrs = new Map(swAttrs.map((a) => [a[F.oid], a]));
     const byPath = new Map();
     for (const f of SWL.features) {
       const a = attrs.get(f.attributes[SWL.oidField]); const ring = ((f.geometry || {}).rings || [])[0];
@@ -476,38 +484,40 @@ export async function computeTables(deps, data, onStatus = () => {}, want = null
         const len = slabLengthFt(s.ring, slabs.length > 1 ? [n[0] - p[0], n[1] - p[1]] : null);
         if (!Number.isFinite(len)) { unmeasured++; return; }
         feet += len;
-        const d = scoreBin(num0(s.a[F.dcs])); if (d) t1[d] += len; else unscored++;
+        const d = scoreBin(num0(s.a[S1.f])); if (d) t1[d] += len; else unscored++;
         const v = num0(s.a[F.vo]); vo[Number.isNaN(v) || v < 0.25 ? 3 : v < 0.5 ? 2 : v < 1 ? 1 : 0] += len;
         const r = Math.abs(num0(s.a[F.rs])); if (!Number.isNaN(r)) rs[r < 5 ? 2 : r <= 8.3 ? 1 : 0] += len;
         const x = Math.abs(num0(s.a[F.cs])); if (!Number.isNaN(x)) cs[x < 2.08 ? 3 : x < 3 ? 2 : x < 5 ? 1 : 0] += len;
       });
     }
     const ft = (v) => fmt(Math.round(v));
-    if (scoreBy) out[1] = { header: [...TABLE_TEMPLATES[1].header], rows: [[scoreLabel, "0-40", ft(t1["0-40"]), "41-70", ft(t1["41-70"]), "71-99", ft(t1["71-99"]), "100", ft(t1["100"])]] };
-    if (scoreBy && !F.dcs) notes.push(`The sidewalk layer has no ${SN} score field, so Table 1 is empty.`);
+    if (scoreBy) out[1] = { header: [...TABLE_TEMPLATES[1].header], rows: [[LABEL[S1.SN], "0-40", ft(t1["0-40"]), "41-70", ft(t1["41-70"]), "71-99", ft(t1["71-99"]), "100", ft(t1["100"])]] };
+    if (scoreBy && !S1.f) notes.push("The sidewalk layer has no RAI or DCS score field, so Table 1 is empty.");
     out[2] = { header: [...TABLE_TEMPLATES[2].header], rows: [
       ["Vertical Changes", '1" Plus', ft(vo[0]), '0.5" - 1"', ft(vo[1]), '0.25" - 0.5"', ft(vo[2]), '<0.25"', ft(vo[3])],
       ["Running Slope", "N/A", "N/A", "> 8.3%", ft(rs[0]), "5% - 8.3%", ft(rs[1]), "< 5%", ft(rs[2])],
       ["Cross Slope", "> 5.0%", ft(cs[0]), "3.0% - 5.0%", ft(cs[1]), "2.08% - 3%", ft(cs[2]), "< 2.08%", ft(cs[3])]] };
     notes.push(`Tables 1–2: ${fmt(Math.round(feet))} ft (${(feet / 5280).toFixed(2)} mi) of sidewalk, measured from the slab shapes the same way the report generator measures them.`);
-    if (scoreBy && unscored && F.dcs) notes.push(`${fmt(unscored)} sidewalk slabs have no ${SN} score, so they are not in Table 1.`);
+    if (scoreBy && unscored && S1.f) notes.push(`${fmt(unscored)} sidewalk slabs have no ${S1.SN} score, so they are not in Table 1.`);
     if (unmeasured) notes.push(`${fmt(unmeasured)} sidewalk slabs have no usable shape and were not measured.`);
   }
   // ---- crosswalks: Table 3 (lowest score per crosswalk) and Tables 4–7 (by signal type)
   const XL = (G.crosswalks || [])[0];
   if (XL && needs(3, 4, 5, 6, 7)) {
     onStatus("Tables 3–7: reading crosswalks…");
-    const F = { path: fieldBy(XL, "Path ID", "path_id"), ticket: fieldBy(XL, "Ticket Key", "Ticket ID", "jira_id"), dcs: fieldBy(XL, SC),
+    const F = { path: fieldBy(XL, "Path ID", "path_id"), ticket: fieldBy(XL, "Ticket Key", "Ticket ID", "jira_id"), ...scoreFields(XL),
       vo: fieldBy(XL, "Vertical Offset (IN.)"), rs: fieldBy(XL, "Running Slope (%)"), cs: fieldBy(XL, "Cross Slope (%)"), sig: fieldBy(XL, "Crosswalk Signal Type") };
-    const rows = (await layerAttrs(deps, XL, Object.values(F))).map((a) => ({
-      id: (F.path && a[F.path] != null && a[F.path] !== "" ? a[F.path] : F.ticket ? a[F.ticket] : null), dcs: num0(a[F.dcs]),
+    const xAttrs = await layerAttrs(deps, XL, Object.values(F));
+    const S3 = pickScore(F, xAttrs, "crosswalk", 3);
+    const rows = xAttrs.map((a) => ({
+      id: (F.path && a[F.path] != null && a[F.path] !== "" ? a[F.path] : F.ticket ? a[F.ticket] : null), dcs: num0(a[S3.f]),
       vo: num0(a[F.vo]), rs: Math.abs(num0(a[F.rs])), cs: Math.abs(num0(a[F.cs])), sig: F.sig ? a[F.sig] : null }));
     // Table 3
     const minBy = new Map();
     for (const r of rows) if (r.id != null && !Number.isNaN(r.dcs)) minBy.set(r.id, Math.min(minBy.get(r.id) ?? Infinity, r.dcs));
     const c3 = { "0-40": 0, "41-70": 0, "71-99": 0, "100": 0 };
     for (const s of minBy.values()) { const b = scoreBin(s); if (b) c3[b]++; }
-    if (scoreBy && !F.dcs) notes.push(`The crosswalk layer has no ${SN} score field, so Table 3 is empty.`);
+    if (scoreBy && !S3.f) notes.push("The crosswalk layer has no RAI or DCS score field, so Table 3 is empty.");
     if (scoreBy) out[3] = { header: [...TABLE_TEMPLATES[3].header], rows: [["Crosswalk Score", "0-40", fmt(c3["0-40"]), "41-70", fmt(c3["41-70"]), "71-99", fmt(c3["71-99"]), "100", fmt(c3["100"])]] };
     // Tables 4–7: each crosswalk counted once per row, in the worst bin it reaches
     const sigTable = (type, running) => {
@@ -537,8 +547,9 @@ export async function computeTables(deps, data, onStatus = () => {}, want = null
     const run = pick("Right Ramp Running Slope (%)", "Left Ramp Running Slope (%)", "Center Ramp Running Slope (%)");
     const width = pick("Right Ramp Width (IN.)", "Left Ramp Width (IN.)", "Center Ramp Width (IN.)");
     const ts = pick("Turning Space Cross Slope (%)", "Turning Space Running Slope (%)");
-    const dcsF = fieldBy(CL, SC);
-    const attrs = await layerAttrs(deps, CL, [...cross, ...run, ...width, ...ts, dcsF]);
+    const sf9 = scoreFields(CL);
+    const attrs = await layerAttrs(deps, CL, [...cross, ...run, ...width, ...ts, sf9.rai, sf9.dcs]);
+    const S9 = pickScore(sf9, attrs, "curb ramp", 9), dcsF = S9.f;
     const max = (a, fs) => { const v = fs.filter(Boolean).map((f) => Math.abs(num0(a[f]))).filter((x) => !Number.isNaN(x)); return v.length ? Math.max(...v) : NaN; };
     const crossBin = (v) => (Number.isNaN(v) ? null : v < 2.08 ? 3 : v < 3 ? 2 : v < 5 ? 1 : 0);
     const runBin = (v) => (Number.isNaN(v) ? null : v < 8.3 ? 3 : v < 8.6 ? 2 : v < 9 ? 1 : 0);
@@ -557,9 +568,9 @@ export async function computeTables(deps, data, onStatus = () => {}, want = null
       ["Running Slope", "> 9.0%", fmt(c.r[0]), "8.6% - 9%", fmt(c.r[1]), "8.3% - 8.6%", fmt(c.r[2]), "< 8.3%", fmt(c.r[3])],
       ["Width", '< 32"', fmt(c.w[0]), '32"-36"', fmt(c.w[1]), '36" - 48"', fmt(c.w[2]), '> 48"', fmt(c.w[3])],
       ["Turning Space Slope", "> 5.0%", fmt(c.t[0]), "3% - 5%", fmt(c.t[1]), "2.08% - 3%", fmt(c.t[2]), "< 2.08%", fmt(c.t[3])]] };
-    if (scoreBy) out[9] = { header: [...TABLE_TEMPLATES[9].header], rows: [[scoreLabel, "0-40", fmt(sc["0-40"]), "41-70", fmt(sc["41-70"]), "71-99", fmt(sc["71-99"]), "100", fmt(sc["100"])]] };
-    if (scoreBy && !dcsF) notes.push(`The curb ramp layer has no ${SN} score field, so Table 9 is empty.`);
-    else if (scoreBy && unscored) notes.push(`${fmt(unscored)} curb ramps have no ${SN} score, so they are not in Table 9.`);
+    if (scoreBy) out[9] = { header: [...TABLE_TEMPLATES[9].header], rows: [[LABEL[S9.SN], "0-40", fmt(sc["0-40"]), "41-70", fmt(sc["41-70"]), "71-99", fmt(sc["71-99"]), "100", fmt(sc["100"])]] };
+    if (scoreBy && !dcsF) notes.push("The curb ramp layer has no RAI or DCS score field, so Table 9 is empty.");
+    else if (scoreBy && unscored) notes.push(`${fmt(unscored)} curb ramps have no ${S9.SN} score, so they are not in Table 9.`);
   }
   // ---- transit stops: Table 10, from the nearest sidewalk slab's travel path width and cross slope
   const TL = (G.transit || [])[0], SL = (G.sidewalks || [])[0];

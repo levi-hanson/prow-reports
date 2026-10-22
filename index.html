@@ -234,7 +234,7 @@ table.ctable td:not(:first-child),table.ctable th:not(:first-child){text-align:c
         <input type="file" id="rfiles" multiple accept=".zip,.csv">
         <div id="rcalcbox" class="calcbox"><p class="small"><b>All 10 tables are filled in from ArcGIS</b> when the map loads, using the same rules as Ryan's report generator. Sidewalk lengths for Tables 1–2 are measured from the slab shapes the way the generator measures them (within about 0.3% of ADA Manager on Irvine and Bangor). Uploading the generator's output still works and replaces them. <button id="rcalc" class="secondary small">Recalculate from ArcGIS</button></p><div id="rbinby" class="binby"><b>Bin Tables 1, 3 and 9 by</b>
           <label class="chk inline"><input type="radio" name="rbin" value="dcs"> DCS</label>
-          <label class="chk inline"><input type="radio" name="rbin" value="rai"> RAI</label>
+          <label class="chk inline"><input type="radio" name="rbin" value="rai"> RAI <span class="muted">(where a layer has it, otherwise DCS)</span></label>
           <span class="req">— pick one (depends on the customer)</span></div>
         <div id="rcalcnotes" class="muted small"></div></div>
         <div id="rtables"></div>
@@ -329,6 +329,6 @@ table.ctable td:not(:first-child),table.ctable th:not(:first-child){text-align:c
 </main>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script type="module" src="app.js?v=20261021112535"></script>
+<script type="module" src="app.js?v=20261022131747"></script>
 </body>
 </html>
