@@ -1,8 +1,8 @@
 // "Full report" tab: load a results map, drop in the report generator's tables, pick pages and
 // detail spots, and download the whole evaluation report as one PDF.
 import { loadReportData, tableScore, buildFullReport, renderInset, renderPickerBase, defaultInset, insetExtent, parseCsv, tableNumber, cleanTable,
-  derivedNumbers, defaultTexts, TEXT_EXAMPLES, computeTables, blankTable, tableHasData, featureAt, popupFields, defaultPopupFields, loadPopup, PAGES, INSETS } from "./report.js?v=20261022132246";
-import { DEFAULTS, layerKey, defaultOrder } from "./renderer.js?v=20261022132246";
+  derivedNumbers, defaultTexts, TEXT_EXAMPLES, computeTables, blankTable, tableHasData, featureAt, popupFields, defaultPopupFields, loadPopup, PAGES, INSETS } from "./report.js?v=20261022132817";
+import { DEFAULTS, layerKey, defaultOrder } from "./renderer.js?v=20261022132817";
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
@@ -15,7 +15,8 @@ const SLOT_PT = { overview: [157, 99], sidewalk: [100, 96], crosswalk: [500, 270
 const TABLE_NAMES = { 1: "Sidewalk phasing", 2: "Sidewalk defects", 3: "Crosswalks by score", 4: "Yield / stop control", 5: "Traffic signal",
   6: "Uncontrolled", 7: "Midblock / roundabout", 8: "Curb ramp defects", 9: "Curb ramp phasing", 10: "Transit stops" };
 // Tables 1 and 9 name the score they are binned by: RAI or DCS, per the table (RAI falls back to DCS per layer)
-const tableName = (k) => (k === 1 || k === 9) && (tableHasData(S.tables[k]) || S.scoreBy) ? `${TABLE_NAMES[k]} (${tableHasData(S.tables[k]) ? tableScore(S.tables[k]) : S.scoreBy.toUpperCase()})` : TABLE_NAMES[k];
+const scoreOf = (k) => (S.tableSource[k] === "arcgis" && (S.tableScores || {})[k]) || (S.scoreBy ? S.scoreBy.toUpperCase() : tableScore(S.tables[k]));
+const tableName = (k) => (k === 1 || k === 9) && (tableHasData(S.tables[k]) || S.scoreBy) ? `${TABLE_NAMES[k]} (${scoreOf(k)})` : TABLE_NAMES[k];
 const NEEDS = { overviewMap: { t: [1] }, sidewalkMap: { g: "sidewalks", t: [2] }, crosswalkMap: { g: "crosswalks", t: [3] }, crosswalkDetails: { t: [4, 5, 6, 7] },
   curbMap: { g: "curbRamps", t: [8] }, curbPhasing: { t: [9] }, refuge: { g: "refuge" }, signals: { g: "signals" }, transit: { g: "transit", t: [10] } };
 
@@ -26,7 +27,7 @@ function blankState() {
   const d = new Date(), today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   return { fields: { coverName: "", city: "", shortName: "", year: String(new Date().getFullYear()), date: today, miles: "", ramps: "" },
     tables: {}, reliability: blankTable("reliability"), include: PAGES.map((p) => p[0]), insets: {}, texts: {}, textOverride: {}, popupOn: true, popup: null,
-    notNeeded: { fields: {}, tables: {} }, icons: null, order: null, tableSource: {}, scoreBy: null, savedAt: null };
+    notNeeded: { fields: {}, tables: {} }, icons: null, order: null, tableSource: {}, tableScores: {}, scoreBy: null, savedAt: null };
 }
 const save = () => { if (!mapId) return; S.savedAt = Date.now(); local.set(`report:${mapId}`, S); updateChecklist(); scheduleLive(); };
 
@@ -225,7 +226,7 @@ function renderBinBy() {
   box.classList.toggle("done", !!S.scoreBy);
 }
 // bump when the table rules change: tables that came from ArcGIS under older rules are recalculated on load
-const CALC_VERSION = 2;
+const CALC_VERSION = 3;
 async function calcTables(force, only = null) {
   const box = $("rcalcnotes"), forMap = mapId, stale = S.calcVersion !== CALC_VERSION;
   let want = only || (force ? null : new Set(Object.keys(TABLE_NAMES).map(Number).filter((n) => !tableHasData(S.tables[n]) || (stale && S.tableSource[n] === "arcgis"))));
@@ -238,7 +239,7 @@ async function calcTables(force, only = null) {
   box.textContent = "Calculating the tables from ArcGIS…"; $("rcalc").disabled = true;
   box.classList.add("busy"); $("rcalcbox").classList.add("working");
   try {
-    const { tables, notes } = await computeTables({ fetchJson: ctx.fetchJson }, data, (s) => { box.textContent = s; }, want, S.scoreBy);
+    const { tables, notes, scores } = await computeTables({ fetchJson: ctx.fetchJson }, data, (s) => { box.textContent = s; }, want, S.scoreBy);
     if (!S.scoreBy) notes.unshift("Pick DCS or RAI above to fill Tables 1, 3 and 9.");
     if (mapId !== forMap) throw new Error("stale");   // another map was loaded meanwhile
     S.calcNotes = notes;
@@ -247,7 +248,7 @@ async function calcTables(force, only = null) {
     for (const [n, t] of Object.entries(tables)) {
       if (want && !want.has(+n)) continue;   // came along with a wanted table from the same layer
       const mine = !tableHasData(S.tables[n]) || S.tableSource[n] === "arcgis";
-      if (force || mine) { S.tables[n] = t; S.tableSource[n] = "arcgis"; } else kept.push(n);
+      if (force || mine) { S.tables[n] = t; S.tableSource[n] = "arcgis"; S.tableScores = S.tableScores || {}; if (scores[n]) S.tableScores[n] = scores[n]; } else kept.push(n);
     }
     box.innerHTML = [...notes.map(esc), kept.length ? `Kept your ${kept.length === 1 ? "table" : "tables"} ${kept.join(", ")} (uploaded or edited) — use the button to replace with ArcGIS.` : ""].filter(Boolean).map((s) => `<div>${s}</div>`).join("") || "The tables are up to date with ArcGIS.";
     save(); renderTables();
@@ -610,7 +611,7 @@ async function build() {
     for (let n = 1; n <= 10; n++) if (!S.notNeeded.tables[n]) tables[n] = S.tables[n];
     if (!S.notNeeded.tables.reliability) tables.reliability = S.reliability;
     const popup = S.popupOn && S.popup && S.popup.oid != null ? S.popup : null;
-    const pdf = await buildFullReport(d, data, { fields: effectiveFields(), tables, include: S.include, insets: S.insets, uploads, texts: S.texts, popup, iconOverrides: iconOverrides(), layerOrder: S.order },
+    const pdf = await buildFullReport(d, data, { fields: effectiveFields(), tables, include: S.include, insets: S.insets, uploads, texts: S.texts, popup, iconOverrides: iconOverrides(), layerOrder: S.order, tableScores: { 1: scoreOf(1), 3: scoreOf(3), 9: scoreOf(9) } },
       (s) => pstatus(`Updating… ${s}`));
     const bytes = new Uint8Array(pdf);
     if (lastUrl) URL.revokeObjectURL(lastUrl);

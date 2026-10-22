@@ -9,7 +9,7 @@
 //   renderInset(deps, data, slot, inset, W, H)         -> canvas (for the spot pickers and the PDF)
 //   buildFullReport(deps, data, input, onStatus)       -> ArrayBuffer (PDF)
 
-import { DEFAULTS, resolveLayers, fetchFeatures, combinedExtent, renderBasemap, renderMapImage, rampColor, css, niceRound, fmtNum, layerKey } from "./renderer.js?v=20261022132246";
+import { DEFAULTS, resolveLayers, fetchFeatures, combinedExtent, renderBasemap, renderMapImage, rampColor, css, niceRound, fmtNum, layerKey } from "./renderer.js?v=20261022132817";
 
 // ---------------------------------------------------------------- design tokens (measured from the 2026 Bangor report)
 const PW = 612, PH = 792, ML = 54, CW = 504;            // letter portrait, left margin, content width (pt)
@@ -449,7 +449,7 @@ function slabLengthFt(ring, tv) {
 // those three are left out and everything else is still calculated
 export const tableScore = (t) => (/RAI/.test(String(((t || {}).rows || [[]])[0][0] || "")) ? "RAI" : "DCS");
 export async function computeTables(deps, data, onStatus = () => {}, want = null, scoreBy = null) {
-  const out = {}, notes = [];
+  const out = {}, notes = [], scores = {};
   const G = data.groups, needs = (...ns) => !want || ns.some((n) => want.has(n));
   // RAI is used per layer only where that layer has RAI scores; otherwise the layer falls back to DCS
   const LABEL = { RAI: "RAI Score", DCS: "Dax Compliance Score (DCS)" };
@@ -466,7 +466,7 @@ export async function computeTables(deps, data, onStatus = () => {}, want = null
     const F = { oid: SWL.oidField, path: fieldBy(SWL, "Path ID", "path_id"), ticket: fieldBy(SWL, "Ticket Key", "Ticket ID"), idx: fieldBy(SWL, "Segment Index", "segment_idx"),
       ...(() => { const sf = scoreFields(SWL); return { rai: sf.rai, dcs: sf.dcs }; })(), vo: fieldBy(SWL, "Vertical Offset (IN.)"), rs: fieldBy(SWL, "Running Slope (%)"), cs: fieldBy(SWL, "Cross Slope (%)") };
     const swAttrs = await layerAttrs(deps, SWL, Object.values(F));
-    const S1 = pickScore(F, swAttrs, "sidewalk", 1);
+    const S1 = pickScore(F, swAttrs, "sidewalk", 1); scores[1] = S1.SN;
     const attrs = new Map(swAttrs.map((a) => [a[F.oid], a]));
     const byPath = new Map();
     for (const f of SWL.features) {
@@ -509,7 +509,7 @@ export async function computeTables(deps, data, onStatus = () => {}, want = null
     const F = { path: fieldBy(XL, "Path ID", "path_id"), ticket: fieldBy(XL, "Ticket Key", "Ticket ID", "jira_id"), ...scoreFields(XL),
       vo: fieldBy(XL, "Vertical Offset (IN.)"), rs: fieldBy(XL, "Running Slope (%)"), cs: fieldBy(XL, "Cross Slope (%)"), sig: fieldBy(XL, "Crosswalk Signal Type") };
     const xAttrs = await layerAttrs(deps, XL, Object.values(F));
-    const S3 = pickScore(F, xAttrs, "crosswalk", 3);
+    const S3 = pickScore(F, xAttrs, "crosswalk", 3); scores[3] = S3.SN;
     const rows = xAttrs.map((a) => ({
       id: (F.path && a[F.path] != null && a[F.path] !== "" ? a[F.path] : F.ticket ? a[F.ticket] : null), dcs: num0(a[S3.f]),
       vo: num0(a[F.vo]), rs: Math.abs(num0(a[F.rs])), cs: Math.abs(num0(a[F.cs])), sig: F.sig ? a[F.sig] : null }));
@@ -550,7 +550,7 @@ export async function computeTables(deps, data, onStatus = () => {}, want = null
     const ts = pick("Turning Space Cross Slope (%)", "Turning Space Running Slope (%)");
     const sf9 = scoreFields(CL);
     const attrs = await layerAttrs(deps, CL, [...cross, ...run, ...width, ...ts, sf9.rai, sf9.dcs]);
-    const S9 = pickScore(sf9, attrs, "curb ramp", 9), dcsF = S9.f;
+    const S9 = pickScore(sf9, attrs, "curb ramp", 9), dcsF = S9.f; scores[9] = S9.SN;
     const max = (a, fs) => { const v = fs.filter(Boolean).map((f) => Math.abs(num0(a[f]))).filter((x) => !Number.isNaN(x)); return v.length ? Math.max(...v) : NaN; };
     const crossBin = (v) => (Number.isNaN(v) ? null : v < 2.08 ? 3 : v < 3 ? 2 : v < 5 ? 1 : 0);
     const runBin = (v) => (Number.isNaN(v) ? null : v < 8.3 ? 3 : v < 8.6 ? 2 : v < 9 ? 1 : 0);
@@ -596,7 +596,7 @@ export async function computeTables(deps, data, onStatus = () => {}, want = null
       ["Boarding/Alighting Slope", ">5.0%", fmt(sb[0]), "3.0%-5.0%", fmt(sb[1]), "2.08%-3.0%", fmt(sb[2]), "<2.08%", fmt(sb[3])]] };
     if (unmatched) notes.push(`${fmt(unmatched)} transit stops have no sidewalk within 30 m; they count as "< 48 in or missing" in Table 10.`);
   }
-  return { tables: out, notes };
+  return { tables: out, notes, scores };
 }
 
 // ---------------------------------------------------------------- PDF helpers
@@ -838,7 +838,7 @@ export async function buildFullReport(deps, data, input, onStatus = () => {}) {
   const fitW = (maxW, top, after) => Math.min(maxW, (BOTTOM - top - FIG_BELOW - after) * MAP_ASPECT);
   const G = data.groups;
   // Tables 1 and 9 say which score they were binned by in their row label ("RAI Score" or DCS)
-  const byScore = (n) => (/RAI/.test(String(((tables[n] || {}).rows || [[]])[0][0] || "")) ? "RAI" : "DCS");
+  const byScore = (n) => (input.tableScores || {})[n] || tableScore(tables[n]);
   const CAP = {
     1: `Feet of sidewalk to be brought up to PROWAG standard in each phase of repair, starting with panels that present the greatest hazard and going to panels that present less hazard, by ${byScore(1)}.`,
     2: "We broke sidewalk segments into categories based on the defects present. Categories list sidewalk by feet surveyed from least to most compliant, going from left to right.",
