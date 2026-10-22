@@ -9,7 +9,7 @@
 //   renderInset(deps, data, slot, inset, W, H)         -> canvas (for the spot pickers and the PDF)
 //   buildFullReport(deps, data, input, onStatus)       -> ArrayBuffer (PDF)
 
-import { DEFAULTS, resolveLayers, fetchFeatures, combinedExtent, renderBasemap, renderMapImage, rampColor, css, niceRound, fmtNum, layerKey } from "./renderer.js?v=20261022132817";
+import { DEFAULTS, resolveLayers, fetchFeatures, combinedExtent, renderBasemap, renderMapImage, rampColor, css, niceRound, fmtNum, layerKey } from "./renderer.js?v=20261022134046";
 
 // ---------------------------------------------------------------- design tokens (measured from the 2026 Bangor report)
 const PW = 612, PH = 792, ML = 54, CW = 504;            // letter portrait, left margin, content width (pt)
@@ -37,7 +37,7 @@ export const GROUPS = {
 // Pages (in order). id -> label shown in the "pages to include" selector.
 export const PAGES = [
   ["cover", "Cover"], ["overview", "Overview"], ["reliability", "Data reliability"],
-  ["overviewMap", "Overview map + Table 1"], ["sidewalkMap", "Sidewalk DCS map + Table 2"],
+  ["overviewMap", "Overview map + Table 1"], ["sidewalkMap", "Sidewalk score map + Table 2"],
   ["crosswalkMap", "Crosswalks map + Table 3"], ["crosswalkDetails", "Crosswalk details + Tables 4–7"],
   ["curbMap", "Curb ramps map + Table 8"], ["curbPhasing", "Curb ramp phasing (Table 9)"],
   ["refuge", "Pedestrian refuge islands map"], ["signals", "Pedestrian signals map"],
@@ -377,13 +377,27 @@ function reliabilityText(rel) {
   return `${lead} This calculation showed the data sets for this report to be ${range} accurate, with variations between the categories of the data sampled. We have a very high accuracy score for ${andList(veryHigh)}, as well as a high accuracy score for ${andList([...high, "other categories of data"])}. Data accuracy for this report is as listed below:`;
 }
 
-export function defaultTexts(f, data, reliability) {
+// the score a layer's map is coloured by (from its web map renderer), or null when it isn't a score
+export function mapScore(L) {
+  const r = (L && L.renderer) || {};
+  const fs = [r.field, r.field1, ...(r.visualVariables || []).map((v) => v.field), r.valueExpression].filter(Boolean).join(" ");
+  return /RAI/i.test(fs) ? "RAI" : /DCS/i.test(fs) ? "DCS" : null;
+}
+const SCORE_NAME = { DCS: "a Dax Compliance Score (DCS)", RAI: "an RAI score" };
+// scores = { 1: "RAI" | "DCS", 9: ... } — what Tables 1 and 9 were binned by
+export function defaultTexts(f, data, reliability, scores = {}) {
   const city = f.city || "the city";
+  const sw = scores[1] || "DCS", cr = scores[9] || "DCS";
+  const scored = sw === cr ? `We also scored curb ramps and sidewalk segments with ${SCORE_NAME[sw]}`
+    : `We also scored sidewalk segments with ${SCORE_NAME[sw]} and curb ramps with ${SCORE_NAME[cr]},`;
+  const ms = data && mapScore((data.groups.sidewalks || [])[0]) || sw, mc = data && mapScore((data.groups.curbRamps || [])[0]) || cr;
+  const coded = ms === mc ? `Sidewalk panels and curb ramps, color-coded by ${ms}, are shown as overlays.`
+    : `Sidewalk panels (color-coded by ${ms}) and curb ramps (color-coded by ${mc}) are shown as overlays.`;
   const others = data ? data.layers.filter((L) => !GROUPS.sidewalks.test(L.title) && !GROUPS.curbRamps.test(L.title) && !GROUPS.crosswalks.test(L.title)).map((L) => L.title.toLowerCase()) : [];
   return {
-    overview: `We evaluated the Public Rights-of-Way in ${city} using the Public Rights-of-Way Access Guidelines (PROWAG). We evaluated ${f.miles || "—"} miles of sidewalk and ${f.ramps || "—"} curb ramps. We also scored curb ramps and sidewalk segments with a Dax Compliance Score (DCS) based on running and cross slopes, uplifts, and other impediments to access.`,
+    overview: `We evaluated the Public Rights-of-Way in ${city} using the Public Rights-of-Way Access Guidelines (PROWAG). We evaluated ${f.miles || "—"} miles of sidewalk and ${f.ramps || "—"} curb ramps. ${scored} based on running and cross slopes, uplifts, and other impediments to access.`,
     reliability: reliabilityText(reliability),
-    overviewMap: `Overview map: Sidewalk panels and curb ramps, color-coded by DCS, are shown as overlays.${others.length ? ` Additional overlays show ${andList(others)}.` : ""}`,
+    overviewMap: `Overview map: ${coded}${others.length ? ` Additional overlays show ${andList(others)}.` : ""}`,
   };
 }
 
@@ -891,9 +905,9 @@ export async function buildFullReport(deps, data, input, onStatus = () => {}) {
     h1("OVERVIEW", 75.3, 22);
     let y = W.para(texts.overview, ML, 109.3, 475) + 49.2;
     const items = [];
-    if (on("overviewMap") || on("sidewalkMap")) items.push([A.iconSidewalks, "Sidewalks", `We scored sidewalk sections with a Dax Compliance Score (DCS) ranging from 0 to 100 based on running and cross slopes, uplifts, cracking, fixed obstructions, and other impediments to access. Daxbot evaluated ${f.miles || "—"} miles of sidewalk for this report.`, 28]);
+    if (on("overviewMap") || on("sidewalkMap")) items.push([A.iconSidewalks, "Sidewalks", `We scored sidewalk sections with ${SCORE_NAME[byScore(1)]} ranging from 0 to 100 based on running and cross slopes, uplifts, cracking, fixed obstructions, and other impediments to access. Daxbot evaluated ${f.miles || "—"} miles of sidewalk for this report.`, 28]);
     if (on("crosswalkMap") || on("crosswalkDetails")) items.push([A.iconCrosswalks, "Crosswalks", "We evaluated crosswalks for slope, intersection type, and whether striping was used to mark crosswalk locations.", 32]);
-    if (on("curbMap") || on("curbPhasing")) items.push([A.iconCurbramps, "Curb Ramps", `We scored curb ramps with a Dax Compliance Score (DCS) ranging from 0 to 100 based on attributes such as cross slopes, running slopes, clear width, obstructions, and the presence of detectable warnings. For this report, we evaluated ${f.ramps || "—"} curb ramps.`, 47]);
+    if (on("curbMap") || on("curbPhasing")) items.push([A.iconCurbramps, "Curb Ramps", `We scored curb ramps with ${SCORE_NAME[byScore(9)]} ranging from 0 to 100 based on attributes such as cross slopes, running slopes, clear width, obstructions, and the presence of detectable warnings. For this report, we evaluated ${f.ramps || "—"} curb ramps.`, 47]);
     if (on("transit")) items.push([A.iconTransit, "Transit Stops", "We evaluated transit stop boarding areas for correct depth and slope.", 37]);
     for (const [icon, title, body, iw] of items) {
       img(doc, icon, 87 - iw / 2, y - 16, iw);
@@ -924,8 +938,9 @@ export async function buildFullReport(deps, data, input, onStatus = () => {}) {
   // ---- sidewalk DCS map + Table 2
   if (on("sidewalkMap") && G.sidewalks.length) {
     newPage("sidewalk");
-    W.para([{ t: "The sidewalk DCS Map", b: true }, { t: " below shows sidewalk panels by DCS." }], ML, 75.3, 475);
-    centered("Sidewalk DCS Map", 116);
+    const swMap = mapScore(G.sidewalks[0]) || byScore(1);
+    W.para([{ t: `The sidewalk ${swMap} Map`, b: true }, { t: ` below shows sidewalk panels by ${swMap}.` }], ML, 75.3, 475);
+    centered(`Sidewalk ${swMap} Map`, 116);
     await mapAndTable({ top: 125, maxW: 452, m: await prepMap("sidewalk", G.sidewalks, true), n: 2, cap: true, inset: "sidewalk" });
   }
 

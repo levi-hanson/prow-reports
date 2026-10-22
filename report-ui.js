@@ -1,8 +1,8 @@
 // "Full report" tab: load a results map, drop in the report generator's tables, pick pages and
 // detail spots, and download the whole evaluation report as one PDF.
 import { loadReportData, tableScore, buildFullReport, renderInset, renderPickerBase, defaultInset, insetExtent, parseCsv, tableNumber, cleanTable,
-  derivedNumbers, defaultTexts, TEXT_EXAMPLES, computeTables, blankTable, tableHasData, featureAt, popupFields, defaultPopupFields, loadPopup, PAGES, INSETS } from "./report.js?v=20261022132817";
-import { DEFAULTS, layerKey, defaultOrder } from "./renderer.js?v=20261022132817";
+  derivedNumbers, defaultTexts, TEXT_EXAMPLES, computeTables, blankTable, tableHasData, featureAt, popupFields, defaultPopupFields, loadPopup, PAGES, INSETS } from "./report.js?v=20261022134046";
+import { DEFAULTS, layerKey, defaultOrder } from "./renderer.js?v=20261022134046";
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
@@ -442,7 +442,7 @@ function refreshTexts() {
   if (!S.texts) S.texts = {};
   if (!S.textOverride) S.textOverride = {};
   if (!data || !$("rtexts").querySelector("textarea")) return;
-  const d = defaultTexts(effectiveFields(), data, S.reliability);
+  const d = defaultTexts(effectiveFields(), data, S.reliability, { 1: scoreOf(1), 9: scoreOf(9) });
   for (const [k] of TEXT_ITEMS) {
     if (!S.textOverride[k]) S.texts[k] = d[k];
     const ta = $("rtexts").querySelector(`textarea[data-k="${k}"]`);
