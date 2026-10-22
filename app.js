@@ -1,7 +1,7 @@
-import { CONFIG } from "./config.js?v=20261022142347";
-import { initReportTab, setReportMaps } from "./report-ui.js?v=20261022142347";
-import { initCompletenessTab, setCompletenessMaps } from "./completeness.js?v=20261022142347";
-import { initExportTab } from "./export.js?v=20261022142347";
+import { CONFIG } from "./config.js?v=20261022162726";
+import { initReportTab, setReportMaps } from "./report-ui.js?v=20261022162726";
+import { initCompletenessTab, setCompletenessMaps } from "./completeness.js?v=20261022162726";
+import { initExportTab } from "./export.js?v=20261022162726";
 
 const $ = (id) => document.getElementById(id);
 // One map at a time across the tabs: whichever tab loads a map announces it ("prow:map-loaded") and the other
@@ -23,7 +23,7 @@ async function signIn() {
   const state = b64url(crypto.getRandomValues(new Uint8Array(16)));
   store.set("pkce", { verifier, state });
   const q = new URLSearchParams({ client_id: CONFIG.clientId, response_type: "code", redirect_uri: CONFIG.redirectUri,
-    code_challenge: challenge, code_challenge_method: "S256", state, expiration: "120" });
+    code_challenge: challenge, code_challenge_method: "S256", state, expiration: "1440" });   // refresh token lasts a day
   location.href = `${SHARING}/oauth2/authorize?${q}`;
 }
 async function finishSignIn() {
@@ -35,23 +35,45 @@ async function finishSignIn() {
     client_id: CONFIG.clientId, grant_type: "authorization_code", code: p.get("code"), redirect_uri: CONFIG.redirectUri, code_verifier: pk.verifier }) });
   const j = await r.json(); store.del("pkce");
   if (!j.access_token) throw new Error(j.error_description || "Sign-in failed.");
-  store.set("auth", { token: j.access_token, user: j.username, expires: Date.now() + (j.expires_in - 60) * 1000 });
+  store.set("auth", { token: j.access_token, user: j.username, expires: Date.now() + (j.expires_in - 60) * 1000,
+    refresh: j.refresh_token || null, refreshExpires: j.refresh_token ? Date.now() + ((j.refresh_token_expires_in || 86400) - 60) * 1000 : 0 });
 }
-const auth = () => { const a = store.get("auth"); return a && a.expires > Date.now() ? a : null; };
+// signed in = a live access token, or a refresh token that can get a new one (access tokens only last ~30 min)
+const auth = () => { const a = store.get("auth"); return a && (a.expires > Date.now() || (a.refresh && a.refreshExpires > Date.now())) ? a : null; };
+let refreshing = null;
+async function getToken(force = false) {
+  const a = store.get("auth"); if (!a) return null;
+  if (!force && a.expires > Date.now()) return a.token;
+  if (!a.refresh || a.refreshExpires <= Date.now()) return null;
+  refreshing = refreshing || (async () => {
+    try {
+      const r = await fetch(`${SHARING}/oauth2/token`, { method: "POST", body: new URLSearchParams({ client_id: CONFIG.clientId, grant_type: "refresh_token", refresh_token: a.refresh }) });
+      const j = await r.json();
+      if (!j.access_token) return null;
+      store.set("auth", { ...a, token: j.access_token, expires: Date.now() + (j.expires_in - 60) * 1000 });
+      return j.access_token;
+    } catch { return null; } finally { setTimeout(() => { refreshing = null; }, 0); }
+  })();
+  return refreshing;
+}
 
 // ---------------------------------------------------------------- API helpers
 async function fetchJson(url, params) {
-  const a = auth(); if (!a) throw new Error("Your sign-in expired — sign in again.");
-  const body = new URLSearchParams({ ...Object.fromEntries(Object.entries(params).map(([k, v]) => [k, String(v)])), f: "json", token: a.token });
+  let token = await getToken(); if (!token) throw new Error("Your sign-in expired — sign in again.");
   for (let i = 0; i < 4; i++) {
-    try { const r = await fetch(url, { method: "POST", body }); return await r.json(); }
-    catch (e) { if (i === 3) throw e; await new Promise((res) => setTimeout(res, 2000)); }
+    const body = new URLSearchParams({ ...Object.fromEntries(Object.entries(params).map(([k, v]) => [k, String(v)])), f: "json", token });
+    try {
+      const j = await (await fetch(url, { method: "POST", body })).json();
+      // token rejected (498 invalid / 499 required): renew once and retry
+      if (j && j.error && [498, 499].includes(j.error.code) && i === 0) { token = await getToken(true); if (token) continue; }
+      return j;
+    } catch (e) { if (i === 3) throw e; await new Promise((res) => setTimeout(res, 2000)); }
   }
 }
 const loadImage = (src) => new Promise((res, rej) => { const i = new Image(); i.crossOrigin = "anonymous"; i.onload = () => res(i); i.onerror = () => rej(new Error("image")); i.src = src; });
 const createCanvas = (w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; };
 // an ArcGIS-hosted image (e.g. a feature's photo attachment), fetched with the sign-in token
-const fetchImage = async (url) => { const a = auth(); const r = await fetch(`${url}?token=${encodeURIComponent(a ? a.token : "")}`); if (!r.ok) throw new Error("image"); return loadImage(URL.createObjectURL(await r.blob())); };
+const fetchImage = async (url) => { const t = await getToken(); const r = await fetch(`${url}?token=${encodeURIComponent(t || "")}`); if (!r.ok) throw new Error("image"); return loadImage(URL.createObjectURL(await r.blob())); };
 const blobBytes = (cv, type, q) => new Promise((res) => cv.toBlob(async (b) => res(new Uint8Array(await b.arrayBuffer())), type, q));
 // ---------------------------------------------------------------- UI
 function log(msg) { const d = document.createElement("div"); d.textContent = msg; $("xlog").appendChild(d); }
@@ -84,7 +106,7 @@ async function init() {
   // one tab failing must never stop the others from working
   try { initReportTab({ fetchJson, fetchImage, SHARING, createCanvas, loadImage, blobBytes, searchMaps }); } catch (e) { console.error("Full report tab:", e); }
   try { initCompletenessTab({ fetchJson, SHARING, loadImage, searchMaps }); } catch (e) { console.error("Completeness tab:", e); }
-  try { initExportTab({ fetchJson, SHARING, token: () => (auth() || {}).token }); } catch (e) { console.error("Data export tab:", e); }
+  try { initExportTab({ fetchJson, SHARING, token: getToken }); } catch (e) { console.error("Data export tab:", e); }
   document.querySelector('#tabs [data-tab="tab-report"]').click();   // Full report is the default screen
   $("search").value = CONFIG.defaultSearch;
   await searchMaps();

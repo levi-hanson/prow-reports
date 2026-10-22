@@ -1,8 +1,8 @@
 // "Full report" tab: load a results map, drop in the report generator's tables, pick pages and
 // detail spots, and download the whole evaluation report as one PDF.
 import { loadReportData, tableScore, buildFullReport, renderInset, renderPickerBase, defaultInset, insetExtent, parseCsv, tableNumber, cleanTable,
-  derivedNumbers, defaultTexts, TEXT_EXAMPLES, computeTables, blankTable, tableHasData, featureAt, popupFields, defaultPopupFields, loadPopup, PAGES, INSETS } from "./report.js?v=20261022142347";
-import { DEFAULTS, layerKey, defaultOrder } from "./renderer.js?v=20261022142347";
+  derivedNumbers, defaultTexts, TEXT_EXAMPLES, computeTables, blankTable, tableHasData, featureAt, popupFields, defaultPopupFields, loadPopup, PAGES, INSETS } from "./report.js?v=20261022162726";
+import { DEFAULTS, layerKey, defaultOrder } from "./renderer.js?v=20261022162726";
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);

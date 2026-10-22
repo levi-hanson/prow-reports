@@ -3,7 +3,7 @@
 //   <Service_Title>/<Service_Title>.gdb      file geodatabase, built by ArcGIS (createReplica) and unzipped here
 //   <Service_Title>/images/<layer>/<OBJECTID>_<name>   every photo attachment
 // Photos already in the folder (same name and size) are skipped, so an interrupted export can simply be re-run.
-import { resolveLayers } from "./renderer.js?v=20261022142347";
+import { resolveLayers } from "./renderer.js?v=20261022162726";
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
@@ -75,6 +75,8 @@ async function existingSize(dir, name) { try { return (await (await dir.getFileH
 // ---------------------------------------------------------------- geodatabase: ArcGIS builds it (createReplica), we unzip it into the folder
 async function exportGdb(s, root) {
   const ids = chosen(s).map((L) => L.id);
+  // a finished geodatabase leaves .gdb-complete beside it; re-runs skip it (an interrupted one is rebuilt)
+  if (await existingSize(root, ".gdb-complete") >= 0) { log(`${s.title}: ${s.folder}.gdb is already in the folder — skipped (delete it and .gdb-complete to rebuild).`); return; }
   log(`${s.title}: asking ArcGIS to build the geodatabase (${ids.length} layer${ids.length === 1 ? "" : "s"})…`);
   const job = await ctx.fetchJson(`${s.url}/createReplica`, { layers: ids.join(","), returnAttachments: "false", syncModel: "none", dataFormat: "filegdb", async: "true", replicaName: s.folder });
   if (job.error) throw new Error(`ArcGIS won't export this service: ${job.error.message}${/extract|permission|not allowed|403/i.test(job.error.message + (job.error.details || "")) ? " (export needs the service's Extract setting on, or the owner/an admin signed in)" : ""}`);
@@ -87,7 +89,7 @@ async function exportGdb(s, root) {
   }
   if (/Failed/i.test(st.status || "") || !(st.resultUrl || job.URL)) throw new Error(`ArcGIS couldn't build the geodatabase${st.error ? `: ${st.error.message || st.error}` : ""}.`);
   log(`${s.title}: downloading the geodatabase…`);
-  const r = await fetch(`${st.resultUrl || job.URL}?token=${encodeURIComponent(ctx.token())}`);
+  const r = await fetch(`${st.resultUrl || job.URL}?token=${encodeURIComponent(await ctx.token())}`);
   if (!r.ok) throw new Error(`geodatabase download failed (${r.status})`);
   const zip = await JSZip.loadAsync(await r.blob());
   const files = Object.values(zip.files).filter((f) => !f.dir);
@@ -99,6 +101,7 @@ async function exportGdb(s, root) {
     await writeFile(await subdir(root, parts.slice(0, -1).join("/")), parts[parts.length - 1], await f.async("uint8array"));
     if (++n % 20 === 0) log(`${s.title}: writing the geodatabase… ${n} / ${files.length} files`, true);
   }
+  await writeFile(root, ".gdb-complete", new Date().toISOString());
   log(`${s.title}: ✓ ${rename || top || "geodatabase"} saved (${files.length} files).`);
 }
 
@@ -142,10 +145,11 @@ async function exportPhotos(s, root) {
       const name = `${a.oid}_${a.name}`;
       if (a.size && await existingSize(dir, name) === a.size) { skipped++; return; }
       try {
-        if (!ctx.token()) throw new Error("Your sign-in expired — sign in again, then click Export again; photos already saved are skipped.");
+        const tok = await ctx.token();
+        if (!tok) throw new Error("Your sign-in expired — sign in again, then click Export again; photos already saved are skipped.");
         let r;
         for (let k = 0; k < 4; k++) {
-          r = await fetch(`${s.url}/${L.id}/${a.oid}/attachments/${a.id}?token=${encodeURIComponent(ctx.token())}`).catch(() => null);
+          r = await fetch(`${s.url}/${L.id}/${a.oid}/attachments/${a.id}?token=${encodeURIComponent(k ? await ctx.token() : tok)}`).catch(() => null);
           if (r && r.ok && !/json/i.test(r.headers.get("content-type") || "")) break;
           await new Promise((res) => setTimeout(res, 1000 * 2 ** k + Math.random() * 500));
         }
